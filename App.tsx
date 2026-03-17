@@ -48,11 +48,46 @@ function MainTabs() {
         },
       })}
     >
-      <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
-      <Tab.Screen name="EventsTab" component={EventsScreen} options={{ title: 'Events' }} />
-      <Tab.Screen name="AIHubTab" component={AIHubScreen} options={{ title: 'AI Hub' }} />
-      <Tab.Screen name="NetworkTab" component={NetworkScreen} options={{ title: 'Network' }} />
-      <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Profile' }} />
+      <Tab.Screen 
+        name="HomeTab" 
+        component={HomeScreen} 
+        options={{ 
+          title: 'Home',
+          tabBarLabel: 'Home',
+        }} 
+      />
+      <Tab.Screen 
+        name="EventsTab" 
+        component={EventsScreen} 
+        options={{ 
+          title: 'Events',
+          tabBarLabel: 'Events',
+        }} 
+      />
+      <Tab.Screen 
+        name="AIHubTab" 
+        component={AIHubScreen} 
+        options={{ 
+          title: 'AI Hub',
+          tabBarLabel: 'AI Hub',
+        }} 
+      />
+      <Tab.Screen 
+        name="NetworkTab" 
+        component={NetworkScreen} 
+        options={{ 
+          title: 'Network',
+          tabBarLabel: 'Network',
+        }} 
+      />
+      <Tab.Screen 
+        name="ProfileTab" 
+        component={ProfileScreen} 
+        options={{ 
+          title: 'Profile',
+          tabBarLabel: 'Profile',
+        }} 
+      />
     </Tab.Navigator>
   );
 }
