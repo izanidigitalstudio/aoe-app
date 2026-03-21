@@ -9,7 +9,8 @@
     "build": "npx expo export --platform web",
     "android": "npx expo run:android",
     "ios": "npx expo run:ios",
-    "web": "npx expo start --web"
+    "web": "npx expo start --web",
+    "send:system-emails": "node scripts/send-system-emails.mjs"
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.91",
