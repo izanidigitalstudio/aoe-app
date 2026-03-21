@@ -1,5 +1,7 @@
 import React, { ReactNode, useSyncExternalStore } from 'react';
+import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import { USE_LIVE_BACKEND } from './backendConfig';
 
 type Member = {
   _id: string;
@@ -508,6 +510,10 @@ function useStoreVersion() {
 }
 
 export function useQuery(reference: any, args?: any) {
+  if (USE_LIVE_BACKEND) {
+    return useConvexQuery(reference, args);
+  }
+
   useStoreVersion();
   if (args === 'skip') return undefined;
 
@@ -540,6 +546,10 @@ export function useQuery(reference: any, args?: any) {
 }
 
 export function useMutation(reference: any) {
+  if (USE_LIVE_BACKEND) {
+    return useConvexMutation(reference);
+  }
+
   useStoreVersion();
 
   return async (args?: any) => {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
 View,
 Text,
@@ -19,6 +19,11 @@ export default function EventsScreen() {
   const { isDemo, exitDemo } = useDemo();
   const events = useQuery(api.events.listEvents, {});
   const rsvpEvent = useMutation(api.events.rsvpEvent);
+  const seedData = useMutation(api.init.seedData);
+
+  useEffect(() => {
+    seedData().catch(() => {});
+  }, [seedData]);
 
   const handleRsvp = async (eventId: any) => {
     if (isDemo) {

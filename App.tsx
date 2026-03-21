@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ConvexProvider, ConvexReactClient } from 'convex/react';
 import HomeScreen from './screens/HomeScreen';
 import EventsScreen from './screens/EventsScreen';
 import NetworkScreen from './screens/NetworkScreen';
@@ -11,9 +12,37 @@ import ProfileScreen from './screens/ProfileScreen';
 import AIHubScreen from './screens/AIHubScreen';
 import LoginScreen from './screens/LoginScreen';
 import { DemoContext } from './lib/DemoContext';
+import { CONVEX_URL, USE_LIVE_BACKEND } from './lib/backendConfig';
 import { colors } from './lib/theme';
 
 const Tab = createBottomTabNavigator();
+const convexClient = USE_LIVE_BACKEND ? new ConvexReactClient(CONVEX_URL!) : null;
+
+class RootErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <SafeAreaProvider style={styles.container}>
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorTitle}>App Error</Text>
+            <Text style={styles.errorText}>{this.state.error.message}</Text>
+          </View>
+        </SafeAreaProvider>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const TAB_ICONS: Record<string, { focused: string; unfocused: string }> = {
   HomeTab: { focused: 'home', unfocused: 'home-outline' },
@@ -96,35 +125,60 @@ export default function App() {
   const [mode, setMode] = useState<'demo' | 'login' | 'auth'>('demo');
   const isDemo = mode !== 'auth';
 
-  return (
-    <DemoContext.Provider
-      value={{
-        isDemo,
-        exitDemo: () => setMode('login'),
-        enterDemo: () => setMode('demo'),
-        enterAuth: () => setMode('auth'),
-        signOut: () => setMode('login'),
-      }}
-    >
-      <SafeAreaProvider style={styles.container}>
-        <NavigationContainer>
-          {mode === 'login' ? (
-            <LoginScreen
-              onDemoAccess={() => setMode('demo')}
-              onAuthenticated={() => setMode('auth')}
-            />
-          ) : (
-            <MainTabs />
-          )}
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </DemoContext.Provider>
+  const app = (
+    <RootErrorBoundary>
+      <DemoContext.Provider
+        value={{
+          isDemo,
+          exitDemo: () => setMode('login'),
+          enterDemo: () => setMode('demo'),
+          enterAuth: () => setMode('auth'),
+          signOut: () => setMode('login'),
+        }}
+      >
+        <SafeAreaProvider style={styles.container}>
+          <NavigationContainer>
+            {mode === 'login' ? (
+              <LoginScreen
+                onDemoAccess={() => setMode('demo')}
+                onAuthenticated={() => setMode('auth')}
+              />
+            ) : (
+              <MainTabs />
+            )}
+          </NavigationContainer>
+        </SafeAreaProvider>
+      </DemoContext.Provider>
+    </RootErrorBoundary>
   );
+
+  if (convexClient) {
+    return <ConvexProvider client={convexClient}>{app}</ConvexProvider>;
+  }
+
+  return app;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
+  errorTitle: {
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  errorText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
