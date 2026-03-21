@@ -122,7 +122,7 @@ function MainTabs() {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<'demo' | 'login' | 'auth'>('demo');
+  const [mode, setMode] = useState<'demo' | 'login' | 'auth'>('login');
   const isDemo = mode !== 'auth';
 
   const app = (
