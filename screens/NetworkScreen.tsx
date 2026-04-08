@@ -613,6 +613,7 @@ onChangeText={setSearch}
 <ScrollView
 horizontal
 showsHorizontalScrollIndicator={false}
+style={styles.filterScroll}
 contentContainerStyle={styles.filterRow}
 >
 {INDUSTRIES.map((ind) => (
@@ -877,10 +878,16 @@ fontSize: fontSize.sm,
 },
 
 // Filter
+filterScroll: {
+flexGrow: 0,
+minHeight: 54,
+overflow: 'visible',
+marginBottom: spacing.xs,
+},
 filterRow: {
 paddingHorizontal: spacing.lg,
-paddingTop: 2,
-paddingBottom: spacing.md,
+paddingTop: 4,
+paddingBottom: 10,
 paddingRight: spacing.xl,
 gap: spacing.xs,
 flexDirection: 'row',
@@ -889,6 +896,8 @@ alignItems: 'center',
 filterChip: {
 minHeight: 38,
 justifyContent: 'center',
+alignSelf: 'center',
+flexShrink: 0,
 paddingHorizontal: spacing.md,
 paddingVertical: 8,
 borderRadius: borderRadius.full,
