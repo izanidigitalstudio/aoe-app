@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 // PIN gate is on frontend — admin functions are open for guest/demo access (App Store review)
 
@@ -16,6 +17,7 @@ const adminMemberReturn = v.object({
   bio: v.optional(v.string()),
   contactPhone: v.optional(v.string()),
   contactEmail: v.optional(v.string()),
+  physicalAddress: v.optional(v.string()),
   linkedIn: v.optional(v.string()),
   twitter: v.optional(v.string()),
   website: v.optional(v.string()),
@@ -71,6 +73,7 @@ export const listAllMembers = query({
       bio: m.bio,
       contactPhone: m.contactPhone,
       contactEmail: m.contactEmail,
+      physicalAddress: m.physicalAddress,
       linkedIn: m.linkedIn,
       twitter: m.twitter,
       website: m.website,
@@ -118,6 +121,7 @@ export const addMember = mutation({
     bio: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
     contactEmail: v.optional(v.string()),
+    physicalAddress: v.optional(v.string()),
     linkedIn: v.optional(v.string()),
     twitter: v.optional(v.string()),
     website: v.optional(v.string()),
@@ -150,6 +154,7 @@ export const bulkAddMembers = mutation({
         city: v.optional(v.string()),
         contactPhone: v.optional(v.string()),
         contactEmail: v.optional(v.string()),
+        physicalAddress: v.optional(v.string()),
         website: v.optional(v.string()),
         bio: v.optional(v.string()),
         linkedIn: v.optional(v.string()),
@@ -233,6 +238,7 @@ export const updateMember = mutation({
     bio: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
     contactEmail: v.optional(v.string()),
+    physicalAddress: v.optional(v.string()),
     linkedIn: v.optional(v.string()),
     twitter: v.optional(v.string()),
     website: v.optional(v.string()),
@@ -613,6 +619,21 @@ export const addGuestSpeaker = mutation({
       notes: args.notes,
     });
     await ctx.db.patch(args.eventId, { guestSpeakers: speakers });
+    
+    // Send email to guest speaker if email exists
+    if (args.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendEventEmailToGuest, {
+        guestName: args.name,
+        guestEmail: args.email,
+        guestType: "speaker",
+        eventTitle: event.title,
+        eventDate: event.date,
+        eventLocation: event.venue,
+        eventCity: event.city,
+        eventCountry: event.country,
+        eventDescription: event.description,
+      });
+    }
     return null;
   },
 });
@@ -694,6 +715,21 @@ export const addInvitedGuest = mutation({
       notes: args.notes,
     });
     await ctx.db.patch(args.eventId, { invitedGuests: guests });
+    
+    // Send email to invited guest if email exists
+    if (args.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendEventEmailToGuest, {
+        guestName: args.name,
+        guestEmail: args.email,
+        guestType: "invited",
+        eventTitle: event.title,
+        eventDate: event.date,
+        eventLocation: event.venue,
+        eventCity: event.city,
+        eventCountry: event.country,
+        eventDescription: event.description,
+      });
+    }
     return null;
   },
 });
@@ -743,6 +779,112 @@ export const removeInvitedGuest = mutation({
     if (args.index < 0 || args.index >= guests.length) throw new Error("Invalid index");
     guests.splice(args.index, 1);
     await ctx.db.patch(args.eventId, { invitedGuests: guests });
+    return null;
+  },
+});
+
+// ─── PAID GUESTS ───
+
+export const addPaidGuest = mutation({
+  args: {
+    eventId: v.id("events"),
+    name: v.string(),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    designation: v.optional(v.string()),
+    company: v.optional(v.string()),
+    amountPaid: v.optional(v.number()),
+    paymentMethod: v.optional(v.string()),
+    paymentRef: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+    const guests = (event as any).paidGuests || [];
+    guests.push({
+      name: args.name,
+      email: args.email,
+      phone: args.phone,
+      designation: args.designation,
+      company: args.company,
+      amountPaid: args.amountPaid,
+      paymentMethod: args.paymentMethod,
+      paymentRef: args.paymentRef,
+      notes: args.notes,
+    });
+    await ctx.db.patch(args.eventId, { paidGuests: guests } as any);
+    
+    // Send email to paid guest if email exists
+    if (args.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendEventEmailToGuest, {
+        guestName: args.name,
+        guestEmail: args.email,
+        guestType: "paid",
+        eventTitle: event.title,
+        eventDate: event.date,
+        eventLocation: event.venue,
+        eventCity: event.city,
+        eventCountry: event.country,
+        eventDescription: event.description,
+        amountPaid: args.amountPaid,
+        currency: event.currency,
+      });
+    }
+    return null;
+  },
+});
+
+export const updatePaidGuest = mutation({
+  args: {
+    eventId: v.id("events"),
+    index: v.number(),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    designation: v.optional(v.string()),
+    company: v.optional(v.string()),
+    amountPaid: v.optional(v.number()),
+    paymentMethod: v.optional(v.string()),
+    paymentRef: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+    const guests = [...((event as any).paidGuests || [])];
+    if (args.index < 0 || args.index >= guests.length) throw new Error("Invalid index");
+    const guest = { ...guests[args.index] };
+    if (args.name !== undefined) guest.name = args.name;
+    if (args.email !== undefined) guest.email = args.email;
+    if (args.phone !== undefined) guest.phone = args.phone;
+    if (args.designation !== undefined) guest.designation = args.designation;
+    if (args.company !== undefined) guest.company = args.company;
+    if (args.amountPaid !== undefined) guest.amountPaid = args.amountPaid;
+    if (args.paymentMethod !== undefined) guest.paymentMethod = args.paymentMethod;
+    if (args.paymentRef !== undefined) guest.paymentRef = args.paymentRef;
+    if (args.notes !== undefined) guest.notes = args.notes;
+    guests[args.index] = guest;
+    await ctx.db.patch(args.eventId, { paidGuests: guests } as any);
+    return null;
+  },
+});
+
+export const removePaidGuest = mutation({
+  args: {
+    eventId: v.id("events"),
+    index: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+    const guests = [...((event as any).paidGuests || [])];
+    if (args.index < 0 || args.index >= guests.length) throw new Error("Invalid index");
+    guests.splice(args.index, 1);
+    await ctx.db.patch(args.eventId, { paidGuests: guests } as any);
     return null;
   },
 });

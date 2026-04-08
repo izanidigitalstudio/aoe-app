@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,17 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Modal,
   Image,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery, useMutation } from '../lib/mockBackend';
-import { a0 } from '../lib/a0';
+import { useQuery, useMutation } from 'convex/react';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../convex/_generated/api';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import { useDemo } from '../lib/DemoContext';
+import { useAuthActions } from '../lib/mockBackend';
 import AdminScreen from './AdminScreen';
 
 const COUNTRIES = [
@@ -34,8 +33,11 @@ const INDUSTRIES = [
   'E-Commerce', 'Logistics', 'Media', 'Real Estate', 'Manufacturing', 'Other',
 ];
 
+const ADMIN_PIN = '1977';
+
 export default function ProfileScreen() {
-  const { isDemo, exitDemo, signOut } = useDemo();
+  const { isDemo, exitDemo } = useDemo();
+  const { signOut } = useAuthActions();
   const user = useQuery(api.users.getCurrentUser);
   const updateProfile = useMutation(api.users.updateProfile);
   const ensureUser = useMutation(api.users.ensureCurrentUser);
@@ -45,8 +47,9 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
-  const [pin, setPin] = useState('');
+  const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
+  const pinInputRef = useRef<any>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
@@ -57,6 +60,24 @@ export default function ProfileScreen() {
   const [city, setCity] = useState('');
   const [linkedIn, setLinkedIn] = useState('');
   const [website, setWebsite] = useState('');
+
+  const handleAdminPress = () => {
+    setPinInput('');
+    setPinError(false);
+    setShowPinModal(true);
+    setTimeout(() => pinInputRef.current?.focus(), 300);
+  };
+
+  const handlePinSubmit = () => {
+    if (pinInput === ADMIN_PIN) {
+      setShowPinModal(false);
+      setPinInput('');
+      setPinError(false);
+      setShowAdmin(true);
+    } else {
+      setPinError(true);
+    }
+  };
 
   const pickAndUploadImage = async () => {
     try {
@@ -100,18 +121,6 @@ export default function ProfileScreen() {
     } catch (e: any) {
       setUploadingImage(false);
       Alert.alert('Upload Failed', e.message || 'Could not upload image. Please try again.');
-    }
-  };
-
-  const handleAdminAccess = () => {
-    if (pin === '1977') {
-      setShowPinModal(false);
-      setPin('');
-      setPinError(false);
-      setShowAdmin(true);
-    } else {
-      setPinError(true);
-      setPin('');
     }
   };
 
@@ -159,13 +168,70 @@ export default function ProfileScreen() {
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: signOut },
+      { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
     ]);
   };
 
   // If admin dashboard is open, render it
   if (showAdmin) {
     return <AdminScreen onBack={() => setShowAdmin(false)} />;
+  }
+
+  // PIN Entry Screen - renders as full screen instead of Modal
+  if (showPinModal) {
+    return (
+      <View style={styles.container}>
+        <SafeAreaView edges={['top']} style={styles.safeArea}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg }}
+          >
+            <View style={styles.pinModal}>
+              <View style={styles.pinIconWrap}>
+                <Ionicons name="lock-closed" size={28} color={colors.primary} />
+              </View>
+              <Text style={styles.pinTitle}>Admin Access</Text>
+              <Text style={styles.pinSubtitle}>Enter PIN to continue</Text>
+              <TextInput
+                ref={pinInputRef}
+                style={[styles.pinInput, pinError && styles.pinInputError]}
+                value={pinInput}
+                onChangeText={(t: string) => {
+                  setPinInput(t);
+                  setPinError(false);
+                }}
+                placeholder="----"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                autoFocus
+                textAlign="center"
+                onSubmitEditing={handlePinSubmit}
+              />
+              {pinError && (
+                <Text style={styles.pinErrorText}>Incorrect PIN. Try again.</Text>
+              )}
+              <View style={styles.pinButtons}>
+                <TouchableOpacity
+                  style={styles.pinCancelBtn}
+                  onPress={() => setShowPinModal(false)}
+                >
+                  <Text style={styles.pinCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pinSubmitBtn, pinInput.length < 4 && { opacity: 0.5 }]}
+                  onPress={handlePinSubmit}
+                  disabled={pinInput.length < 4}
+                >
+                  <Text style={styles.pinSubmitText}>Unlock</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    );
   }
 
   if (isDemo) {
@@ -179,7 +245,7 @@ export default function ProfileScreen() {
             {/* Admin Dashboard Button — no PIN required for guest/demo (App Store review) */}
             <TouchableOpacity
               style={styles.adminBanner}
-              onPress={() => setShowAdmin(true)}
+              onPress={handleAdminPress}
               activeOpacity={0.8}
             >
               <View style={styles.adminIconWrap}>
@@ -242,7 +308,7 @@ export default function ProfileScreen() {
             {/* Admin Dashboard Button — always accessible */}
             <TouchableOpacity
               style={styles.adminBanner}
-              onPress={() => { setPin(''); setPinError(false); setShowPinModal(true); }}
+              onPress={handleAdminPress}
               activeOpacity={0.8}
             >
               <View style={styles.adminIconWrap}>
@@ -281,85 +347,6 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </ScrollView>
-
-          {/* PIN Modal */}
-          <Modal visible={showPinModal} animationType="fade" transparent>
-            <TouchableOpacity
-              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}
-              activeOpacity={1}
-              onPress={() => setShowPinModal(false)}
-            >
-              <TouchableOpacity activeOpacity={1} style={{
-                backgroundColor: colors.surface,
-                borderRadius: borderRadius.lg,
-                padding: spacing.xl,
-                width: '80%',
-                maxWidth: 320,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}>
-                <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
-                  <View style={{
-                    width: 56, height: 56, borderRadius: 28,
-                    backgroundColor: colors.primary + '20',
-                    justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md,
-                  }}>
-                    <Ionicons name="lock-closed" size={26} color={colors.primary} />
-                  </View>
-                  <Text style={{ fontSize: fontSize.lg, fontWeight: '800', color: colors.text }}>Admin Access</Text>
-                  <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary, marginTop: spacing.xs, textAlign: 'center' }}>
-                    Enter the super PIN to continue
-                  </Text>
-                </View>
-                <TextInput
-                  style={{
-                    backgroundColor: colors.background,
-                    borderRadius: borderRadius.md,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.md,
-                    color: colors.text,
-                    fontSize: 24,
-                    fontWeight: '800',
-                    textAlign: 'center',
-                    letterSpacing: 12,
-                    borderWidth: 1,
-                    borderColor: pinError ? colors.error : colors.border,
-                  }}
-                  value={pin}
-                  onChangeText={(t) => { setPin(t); setPinError(false); }}
-                  placeholder="----"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  secureTextEntry
-                  autoFocus
-                />
-                {pinError && (
-                  <Text style={{ color: colors.error, fontSize: fontSize.xs, textAlign: 'center', marginTop: spacing.sm }}>
-                    Incorrect PIN. Try again.
-                  </Text>
-                )}
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: colors.primary,
-                    paddingVertical: spacing.md,
-                    borderRadius: borderRadius.md,
-                    alignItems: 'center',
-                    marginTop: spacing.lg,
-                  }}
-                  onPress={handleAdminAccess}
-                >
-                  <Text style={{ fontSize: fontSize.md, fontWeight: '700', color: colors.black }}>Unlock</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ alignItems: 'center', marginTop: spacing.md }}
-                  onPress={() => setShowPinModal(false)}
-                >
-                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>Cancel</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </Modal>
         </SafeAreaView>
       </View>
     );
@@ -384,7 +371,7 @@ export default function ProfileScreen() {
             {!editing && (
               <TouchableOpacity
                 style={styles.adminBanner}
-                onPress={() => { setPin(''); setPinError(false); setShowPinModal(true); }}
+                onPress={handleAdminPress}
                 activeOpacity={0.8}
               >
                 <View style={styles.adminIconWrap}>
@@ -594,85 +581,6 @@ export default function ProfileScreen() {
 
             <View style={{ height: 100 }} />
           </ScrollView>
-
-          {/* PIN Modal */}
-          <Modal visible={showPinModal} animationType="fade" transparent>
-            <TouchableOpacity 
-              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}
-              activeOpacity={1}
-              onPress={() => setShowPinModal(false)}
-            >
-              <TouchableOpacity activeOpacity={1} style={{
-                backgroundColor: colors.surface,
-                borderRadius: borderRadius.lg,
-                padding: spacing.xl,
-                width: '80%',
-                maxWidth: 320,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}>
-                <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
-                  <View style={{
-                    width: 56, height: 56, borderRadius: 28,
-                    backgroundColor: colors.primary + '20',
-                    justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md,
-                  }}>
-                    <Ionicons name="lock-closed" size={26} color={colors.primary} />
-                  </View>
-                  <Text style={{ fontSize: fontSize.lg, fontWeight: '800', color: colors.text }}>Admin Access</Text>
-                  <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary, marginTop: spacing.xs, textAlign: 'center' }}>
-                    Enter the super PIN to continue
-                  </Text>
-                </View>
-                <TextInput
-                  style={{
-                    backgroundColor: colors.background,
-                    borderRadius: borderRadius.md,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.md,
-                    color: colors.text,
-                    fontSize: 24,
-                    fontWeight: '800',
-                    textAlign: 'center',
-                    letterSpacing: 12,
-                    borderWidth: 1,
-                    borderColor: pinError ? colors.error : colors.border,
-                  }}
-                  value={pin}
-                  onChangeText={(t) => { setPin(t); setPinError(false); }}
-                  placeholder="----"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  secureTextEntry
-                  autoFocus
-                />
-                {pinError && (
-                  <Text style={{ color: colors.error, fontSize: fontSize.xs, textAlign: 'center', marginTop: spacing.sm }}>
-                    Incorrect PIN. Try again.
-                  </Text>
-                )}
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: colors.primary,
-                    paddingVertical: spacing.md,
-                    borderRadius: borderRadius.md,
-                    alignItems: 'center',
-                    marginTop: spacing.lg,
-                  }}
-                  onPress={handleAdminAccess}
-                >
-                  <Text style={{ fontSize: fontSize.md, fontWeight: '700', color: colors.black }}>Unlock</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ alignItems: 'center', marginTop: spacing.md }}
-                  onPress={() => setShowPinModal(false)}
-                >
-                  <Text style={{ fontSize: fontSize.sm, color: colors.textMuted }}>Cancel</Text>
-                </TouchableOpacity>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </Modal>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -837,4 +745,87 @@ const styles = StyleSheet.create({
   },
   adminBannerTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
   adminBannerDesc: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
+  pinModal: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pinIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  pinTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  pinSubtitle: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
+  pinInput: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    color: colors.text,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    width: '100%',
+    marginBottom: spacing.sm,
+  },
+  pinInputError: {
+    borderColor: colors.error,
+  },
+  pinErrorText: {
+    fontSize: fontSize.sm,
+    color: colors.error,
+    marginBottom: spacing.sm,
+  },
+  pinButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    width: '100%',
+  },
+  pinCancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pinCancelText: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  pinSubmitBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+  },
+  pinSubmitText: {
+    fontSize: fontSize.md,
+    color: colors.black,
+    fontWeight: '700',
+  },
 });

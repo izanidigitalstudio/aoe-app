@@ -13,15 +13,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery, useMutation } from '../lib/mockBackend';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
+import { USE_LIVE_BACKEND } from '../lib/backendConfig';
 import { useDemo } from '../lib/DemoContext';
 import { AFRICAN_VCS } from '../data/africanVCs';
 import { AI_TOOLS } from '../data/aiTools';
 import { AI_GUIDES } from '../data/aiGuides';
 import { CASE_STUDIES } from '../data/caseStudies';
 import { SA_PODCASTS } from '../data/podcasts';
+import InviteScreen from './InviteScreen';
+
+const BOOK_COVER_URL = 'https://nabdgzjpwhkjfimljnql.supabase.co/storage/v1/object/public/project_assets/55afaa5e-77cb-4947-935d-cedba8dbe438/assets/dbd17ae2-2c40-40de-b3d1-778f2dabb193_IMG_0451.jpeg';
 
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -160,12 +164,16 @@ export default function HomeScreen({ navigation }: any) {
   const projects = useQuery(api.projects.listProjects, {});
   const members = useQuery(api.users.listMembers, {});
   const stats = useQuery(api.admin.getStats, {});
+  const featuredMembers = useQuery(api.users.listFeaturedMembers, {});
   const seedData = useMutation(api.init.seedData);
   const [selectedProject, setSelectedProject] = useState<(typeof UPCOMING_PROJECTS)[number] | null>(null);
+  const [showInvite, setShowInvite] = useState(false);
 
   useEffect(() => {
-    seedData().catch(() => {});
-  }, []);
+    if (!USE_LIVE_BACKEND) {
+      seedData().catch(() => {});
+    }
+  }, [seedData]);
 
   const upcomingEvents = events?.filter((e) => e.status === 'upcoming').slice(0, 3);
   const latestProjects = projects?.slice(0, 3);
@@ -247,12 +255,58 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </View>
 
+          {/* Book Promotion Banner */}
+          <TouchableOpacity
+            style={styles.bookBanner}
+            activeOpacity={0.85}
+            onPress={() => Linking.openURL('https://www.aoebook.com')}
+          >
+            <View style={styles.bookBannerContent}>
+              <Image
+                source={{ uri: BOOK_COVER_URL }}
+                style={styles.bookCoverImage}
+                resizeMode="contain"
+              />
+              <View style={styles.bookInfo}>
+                <View style={styles.bookBadge}>
+                  <Ionicons name="star" size={10} color={colors.primary} />
+                  <Text style={styles.bookBadgeText}>NEW RELEASE</Text>
+                </View>
+                <Text style={styles.bookTitle}>The Art of{'\n'}Entrepreneurship</Text>
+                <Text style={styles.bookSubtitle}>Mastering the Journey from Idea to Impact</Text>
+                <Text style={styles.bookAuthor}>By Lebo Gunguluza</Text>
+                <View style={styles.bookCTA}>
+                  <Text style={styles.bookCTAText}>Get Your Copy</Text>
+                  <Ionicons name="arrow-forward" size={14} color={colors.black} />
+                </View>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* Invite Members Card */}
+          {!isDemo && (
+            <TouchableOpacity
+              style={styles.inviteCard}
+              onPress={() => setShowInvite(true)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.inviteIcon}>
+                <Ionicons name="qr-code" size={24} color={colors.primary} />
+              </View>
+              <View style={styles.inviteInfo}>
+                <Text style={styles.inviteTitle}>Invite New Members</Text>
+                <Text style={styles.inviteSubtitle}>Share registration link or QR code</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+
           {/* Upcoming Events */}
           {upcomingEvents && upcomingEvents.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Dinner Tour Events</Text>
-                <TouchableOpacity onPress={() => navigation.navigate('EventsTab')}>
+                <TouchableOpacity onPress={() => navigation.navigate('CommunityTab')}>
                   <Text style={styles.seeAll}>See All</Text>
                 </TouchableOpacity>
               </View>
@@ -261,7 +315,7 @@ export default function HomeScreen({ navigation }: any) {
                   <TouchableOpacity
                     key={event._id}
                     style={styles.eventCard}
-                    onPress={() => navigation.navigate('EventsTab')}
+                    onPress={() => navigation.navigate('CommunityTab')}
                   >
                     <View style={styles.eventImagePlaceholder}>
                       <Ionicons name="restaurant" size={28} color={colors.primary} />
@@ -355,33 +409,25 @@ export default function HomeScreen({ navigation }: any) {
           </View>
 
           {/* Top Members */}
-          {members && members.length > 0 && (
+          {featuredMembers && featuredMembers.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Platinum Network</Text>
-                <TouchableOpacity onPress={() => navigation.navigate('NetworkTab')}>
+                <Text style={styles.sectionTitle}>AOE Network</Text>
+                <TouchableOpacity onPress={() => navigation.navigate('NetworkMembers')}>
                   <Text style={styles.seeAll}>See All</Text>
                 </TouchableOpacity>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {members.slice(0, 8).map((member) => (
+                {featuredMembers.slice(0, 12).map((member) => (
                   <TouchableOpacity
                     key={member._id}
                     style={styles.memberCard}
-                    onPress={() => navigation.navigate('NetworkTab')}
+                    onPress={() => navigation.navigate('NetworkMembers')}
                   >
-                    {member.image ? (
-                      <Image
-                        source={{ uri: member.image }}
-                        style={styles.memberImage}
-                      />
-                    ) : (
-                      <View style={[styles.memberImage, { backgroundColor: colors.primary + '30', justifyContent: 'center', alignItems: 'center' }]}>
-                        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primary }}>
-                          {(member.name || 'A').charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
+                    <Image
+                      source={{ uri: member.image }}
+                      style={styles.memberImage}
+                    />
                     <Text style={styles.memberName} numberOfLines={1}>
                       {member.name?.split(' ')[0]}
                     </Text>
@@ -510,6 +556,11 @@ export default function HomeScreen({ navigation }: any) {
             </SafeAreaView>
           </View>
         </Modal>
+
+        {/* Invite Members Modal */}
+        <Modal visible={showInvite} animationType="slide" presentationStyle="pageSheet">
+          <InviteScreen onClose={() => setShowInvite(false)} />
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -632,6 +683,114 @@ const styles = StyleSheet.create({
   },
   statNumber: { fontSize: fontSize.xl, fontWeight: '800', color: colors.primary },
   statLabel: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 4 },
+  inviteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+    gap: spacing.md,
+  },
+  inviteIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inviteInfo: {
+    flex: 1,
+  },
+  inviteTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  inviteSubtitle: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  // Book Promotion Banner
+  bookBanner: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+  bookBannerContent: {
+    flexDirection: 'row',
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  bookCoverImage: {
+    width: 110,
+    height: 150,
+    borderRadius: borderRadius.md,
+  },
+  bookInfo: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  bookBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary + '20',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+    marginBottom: spacing.xs,
+  },
+  bookBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: 0.5,
+  },
+  bookTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '800',
+    color: colors.text,
+    lineHeight: 22,
+  },
+  bookSubtitle: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  bookAuthor: {
+    fontSize: fontSize.xs,
+    color: colors.primary,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  bookCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.sm,
+  },
+  bookCTAText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.black,
+  },
   section: { marginTop: spacing.xl, paddingHorizontal: spacing.lg },
   sectionHeader: {
     flexDirection: 'row',

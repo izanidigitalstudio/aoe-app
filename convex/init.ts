@@ -11,13 +11,26 @@ export const seedData = mutation({
 
     const events = [
       {
+        title: "IDEAL Summit 2026",
+        description:
+          "IDEAL Summit 2026 brings together institutional investors, development finance institutions, strategic corporates and entrepreneurs seeking investment for African projects. Held April 8-9 at Royal Aria Conference Centre in Tlokweng. Day 1 (April 8) is an invitation-only Investor Roundtable, Day 2 (April 9) is the public summit. IDEAL stands for Inclusion, Diversity, Equity, Access and Local Empowerment. This platform matches credible projects with serious investors looking to deploy capital across Africa.",
+        city: "Tlokweng",
+        country: "Botswana",
+        venue: "Royal Aria Conference Centre, Tlokweng",
+        date: 1775750400000, // April 8, 2026 00:00 SAST
+        capacity: 300,
+        imageUrl:
+          "https://images.unsplash.com/photo-1552664730-d307ca884978?w=500&h=300&fit=crop",
+        status: "upcoming",
+      },
+      {
         title: "The Future is Here - Botswana (Powered by Starlink)",
         description:
           "The Future is Here Dinner Tour kicks off in Botswana at Hotel 430, Gaborone. An exclusive invitation-only event limited to 30 top entrepreneurs and innovators. Attendees must complete registration on this platform and pay 950 Pula to confirm attendance. Powered by Starlink, this is the flagship event launching the AI entrepreneurship movement across Africa.",
         city: "Gaborone",
         country: "Botswana",
         venue: "Hotel 430, Gaborone",
-        date: 1775923200000, // April 10, 2026 18:00 SAST
+        date: 1776528000000, // May 21, 2026 18:00 SAST
         capacity: 30,
         imageUrl:
           "https://images.unsplash.com/photo-1552664730-d307ca884978?w=500&h=300&fit=crop",
@@ -157,24 +170,29 @@ export const seedBotswanaEvent = mutation({
   handler: async (ctx) => {
     // Find and update existing Botswana event, or create if missing
     const events = await ctx.db.query("events").collect();
-    const existing = events.find((e: any) => e.title.includes("Botswana"));
+    const existing = events.find((e: any) => e.title.includes("IDEAL"));
     if (existing) {
-      await ctx.db.patch(existing._id, { date: 1775836800000 });
+      await ctx.db.patch(existing._id, { 
+        title: "IDEAL Summit 2026",
+        description: "IDEAL Summit 2026 brings together institutional investors, development finance institutions, strategic corporates and entrepreneurs seeking investment for African projects. Held April 8-9 at Royal Aria Conference Centre in Tlokweng. Day 1 (April 8) is an invitation-only Investor Roundtable, Day 2 (April 9) is the public summit. IDEAL stands for Inclusion, Diversity, Equity, Access and Local Empowerment. This platform matches credible projects with serious investors looking to deploy capital across Africa.",
+        city: "Tlokweng",
+        venue: "Royal Aria Conference Centre, Tlokweng",
+        date: 1775750400000,
+        capacity: 300,
+      });
       return null;
     }
     
     await ctx.db.insert("events", {
-      title: "The Future is Here - Botswana (Powered by Starlink)",
-      description: "The Future is Here Dinner Tour kicks off in Botswana at Hotel 430, Gaborone. An exclusive invitation-only event limited to 30 top entrepreneurs and innovators. Attendees must complete registration on this platform and pay 950 Pula to confirm attendance. Powered by Starlink, this is the flagship event launching the AI entrepreneurship movement across Africa.",
-      city: "Gaborone",
+      title: "IDEAL Summit 2026",
+      description: "IDEAL Summit 2026 brings together institutional investors, development finance institutions, strategic corporates and entrepreneurs seeking investment for African projects. Held April 8-9 at Royal Aria Conference Centre in Tlokweng. Day 1 (April 8) is an invitation-only Investor Roundtable, Day 2 (April 9) is the public summit. IDEAL stands for Inclusion, Diversity, Equity, Access and Local Empowerment. This platform matches credible projects with serious investors looking to deploy capital across Africa.",
+      city: "Tlokweng",
       country: "Botswana",
-      venue: "Hotel 430, Gaborone",
-      date: 1775836800000, // April 10, 2026 18:00 SAST
-      capacity: 30,
+      venue: "Royal Aria Conference Centre, Tlokweng",
+      date: 1775750400000, // April 8, 2026 00:00 SAST
+      capacity: 300,
       imageUrl: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=500&h=300&fit=crop",
       status: "upcoming",
-      ticketPrice: 950,
-      currency: "BWP",
     });
     return null;
   },

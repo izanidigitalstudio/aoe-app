@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "AOE Connect",
-    "slug": "aoe-connect",
+    "name": "a0-project",
+    "slug": "snack-f4e9defd-631a-4286-9bf6-d8e3b198bf1f",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -24,8 +24,8 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/icon.png"
+      "favicon": "./assets/favicon.png"
     },
-    "description": "Connect with AI professionals, explore cutting-edge resources, discover events, and network with visionary leaders shaping the future of AI technology."
+    "description": "Quickly generate React Native components with AI"
   }
 }

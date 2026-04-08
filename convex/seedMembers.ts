@@ -1,7 +1,7 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 
-const DEMO_MEMBERS = [
+export const DEMO_MEMBERS = [
 { name: "Amara Okafor", role: "CEO & Founder", company: "AgroTech Solutions", industry: "Agriculture", country: "Nigeria", city: "Lagos", bio: "Serial entrepreneur transforming smallholder farming through AI-powered precision agriculture across West Africa.", achievements: "Built a network of 50,000+ farmers using AI crop advisory. Raised $4.2M Series A. Winner, Africa Prize for Engineering Innovation 2023. Forbes Africa 30 Under 30.", currentProjects: "Deploying satellite-based crop monitoring using machine learning for real-time yield prediction across 5 West African countries.", futureProjects: "Launching an AI marketplace connecting African farmers directly to global buyers, cutting out middlemen and increasing farmer income by 300%.", skills: ["AI/ML", "AgTech", "Supply Chain", "Fundraising"], contactEmail: "amara@agrotech.ng", contactPhone: "+234 801 234 5678", linkedIn: "linkedin.com/in/amaraokafor", twitter: "@amaraokafor", seed: 101, gender: "woman" },
 { name: "Kwame Mensah", role: "CTO", company: "FinStack Africa", industry: "Fintech", country: "Ghana", city: "Accra", bio: "Fintech pioneer building the next generation of cross-border payment infrastructure for African businesses.", achievements: "Processed $200M+ in transactions. Built payment infrastructure serving 12 African countries. Ex-Stripe engineer. MIT graduate.", currentProjects: "Building an AI-powered credit scoring system that uses alternative data sources to serve the unbanked population across Africa.", futureProjects: "Creating a pan-African digital currency settlement layer that enables instant, zero-fee business-to-business payments.", skills: ["Blockchain", "Payments", "AI/ML", "System Architecture"], contactEmail: "kwame@finstack.africa", contactPhone: "+233 24 123 4567", linkedIn: "linkedin.com/in/kwamemensah", twitter: "@kwamemensah", seed: 102, gender: "man" },
 { name: "Zara Ndlovu", role: "Founder & CEO", company: "MediAI Africa", industry: "Healthcare", country: "South Africa", city: "Cape Town", bio: "Doctor turned tech entrepreneur, using AI diagnostics to democratize healthcare access across rural Africa.", achievements: "Deployed AI diagnostic tools in 200+ rural clinics. Reduced misdiagnosis rates by 40%. TEDx speaker. WHO Innovation Award recipient.", currentProjects: "Training AI models on African-specific medical datasets to improve diagnostic accuracy for diseases prevalent on the continent.", futureProjects: "Building a telemedicine platform with real-time AI translation supporting 50+ African languages for doctor-patient consultations.", skills: ["Health Tech", "AI Diagnostics", "Telemedicine", "Public Health"], contactEmail: "zara@mediai.co.za", contactPhone: "+27 82 345 6789", linkedIn: "linkedin.com/in/zarandlovu", twitter: "@zarandlovu", seed: 103, gender: "woman" },
@@ -64,7 +64,7 @@ const demoExists = existing.some((u: any) => u.isDemo === true);
 if (demoExists) return null;
 
 for (const member of DEMO_MEMBERS) {
-const imageUrl = `https://api.a0.dev/assets/image?text=${encodeURIComponent(`portrait photo of a ${member.gender === 'woman' ? 'female' : 'male'} ${member.country} professional, ${member.role} in ${member.industry}, ${member.name}, studio headshot, business attire, natural lighting`)}&aspect=1:1&seed=${member.seed * 7}`;
+const imageUrl = `https://api.a0.dev/assets/image?text=${encodeURIComponent(`professional portrait of ${member.name}, a ${member.gender === 'woman' ? 'female' : 'male'} entrepreneur from ${member.country}, ${member.role}, ${member.industry}, diverse representation, business headshot, studio lighting`)}&aspect=1:1&seed=${member.seed}`;
 
 await ctx.db.insert("users", {
 name: member.name,
@@ -107,9 +107,76 @@ const memberMap = new Map(DEMO_MEMBERS.map(m => [m.name, m]));
 for (const user of demoUsers) {
   const member = memberMap.get(user.name);
   if (member) {
-    const imageUrl = `https://api.a0.dev/assets/image?text=${encodeURIComponent(`portrait photo of a ${member.gender === 'woman' ? 'female' : 'male'} ${member.country} professional, ${member.role} in ${member.industry}, ${member.name}, studio headshot, business attire, natural lighting`)}&aspect=1:1&seed=${member.seed * 7}`;
+    const imageUrl = `https://api.a0.dev/assets/image?text=${encodeURIComponent(`professional portrait of ${member.name}, a ${member.gender === 'woman' ? 'female' : 'male'} entrepreneur from ${member.country}, ${member.role}, ${member.industry}, diverse representation, business headshot, studio lighting`)}&aspect=1:1&seed=${member.seed}`;
     await ctx.db.patch(user._id, { image: imageUrl });
   }
+}
+
+return null;
+},
+});
+
+export const regenerateRandomDemoImages = mutation({
+args: {},
+returns: v.null(),
+handler: async (ctx) => {
+const allUsers = await ctx.db.query("users").collect();
+const demoUsers = allUsers.filter((u) => u.isDemo === true);
+
+const memberMap = new Map(DEMO_MEMBERS.map(m => [m.name, m]));
+
+for (const user of demoUsers) {
+  const member = memberMap.get(user.name);
+  if (member) {
+    const randomSeed = Math.floor(Math.random() * 10000);
+    const imageUrl = `https://api.a0.dev/assets/image?text=${encodeURIComponent(`professional portrait of ${member.name}, a ${member.gender === 'woman' ? 'female' : 'male'} entrepreneur from ${member.country}, ${member.role}, ${member.industry}, diverse representation, business headshot, studio lighting`)}&aspect=1:1&seed=${randomSeed}`;
+    await ctx.db.patch(user._id, { image: imageUrl });
+  }
+}
+
+return null;
+},
+});
+
+export const resetAndReseedDemoMembers = mutation({
+args: {},
+returns: v.null(),
+handler: async (ctx) => {
+// Delete all old demo users
+const allUsers = await ctx.db.query("users").collect();
+const demoUsers = allUsers.filter((u: any) =>  u.isDemo === true);
+
+for (const user of demoUsers) {
+  await ctx.db.delete(user._id);
+}
+
+// Reseed with correct images
+for (const member of DEMO_MEMBERS) {
+const imageUrl = `https://api.a0.dev/assets/image?text=${encodeURIComponent(`professional portrait of ${member.name}, a ${member.gender === 'woman' ? 'female' : 'male'} entrepreneur from ${member.country}, ${member.role}, ${member.industry}, diverse representation, business headshot, studio lighting`)}&aspect=1:1&seed=${member.seed}`;
+
+await ctx.db.insert("users", {
+name: member.name,
+image: imageUrl,
+email: `${member.name.toLowerCase().replace(/[^a-z]/g, '')}@demo.aoe.africa`,
+role: member.role,
+company: member.company,
+industry: member.industry,
+country: member.country,
+city: member.city,
+bio: member.bio,
+achievements: member.achievements,
+currentProjects: member.currentProjects,
+futureProjects: member.futureProjects,
+skills: member.skills,
+contactEmail: member.contactEmail,
+contactPhone: member.contactPhone,
+linkedIn: member.linkedIn,
+twitter: member.twitter,
+website: `www.${member.company.toLowerCase().replace(/[^a-z]/g, '')}.africa`,
+interests: ["AI", "Innovation", "Africa"],
+isDemo: true,
+onboarded: true,
+});
 }
 
 return null;

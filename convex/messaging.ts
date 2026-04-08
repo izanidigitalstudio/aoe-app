@@ -1,16 +1,14 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const getOrCreateConversation = mutation({
 args: { otherUserId: v.id("users") },
 returns: v.id("conversations"),
 handler: async (ctx, args) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) throw new Error("Not authenticated");
+const user = await ctx.db.get(userId);
 if (!user) throw new Error("User not found");
 
 // Check for existing conversation between these two users
@@ -42,12 +40,9 @@ content: v.string(),
 },
 returns: v.null(),
 handler: async (ctx, args) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) throw new Error("Not authenticated");
+const user = await ctx.db.get(userId);
 if (!user) throw new Error("User not found");
 
 const convo = await ctx.db.get(args.conversationId);
@@ -83,12 +78,9 @@ isMine: v.boolean(),
 })
 ),
 handler: async (ctx, args) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) return [];
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) return [];
+const user = await ctx.db.get(userId);
 if (!user) return [];
 
 const messages = await ctx.db
@@ -131,12 +123,9 @@ lastMessageAt: v.optional(v.number()),
 })
 ),
 handler: async (ctx) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) return [];
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) return [];
+const user = await ctx.db.get(userId);
 if (!user) return [];
 
 const allConvos = await ctx.db.query("conversations").order("desc").take(100);

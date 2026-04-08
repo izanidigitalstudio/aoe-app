@@ -10,7 +10,7 @@ Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '../lib/mockBackend';
+import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 
@@ -187,9 +187,11 @@ paddingBottom: spacing.sm,
 },
 headerTitle: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.text },
 headerSubtitle: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginTop: 2 },
-categoryScroll: { maxHeight: 50 },
-categoryContent: { paddingHorizontal: spacing.lg, gap: spacing.sm },
+categoryScroll: { maxHeight: 58, flexGrow: 0, marginTop: spacing.xs },
+categoryContent: { paddingHorizontal: spacing.lg, paddingVertical: 4, paddingRight: spacing.xl, gap: spacing.sm, alignItems: 'center' },
 categoryTab: {
+minHeight: 40,
+justifyContent: 'center',
 paddingHorizontal: spacing.md,
 paddingVertical: spacing.sm,
 borderRadius: borderRadius.full,
@@ -197,7 +199,7 @@ borderWidth: 1,
 borderColor: colors.border,
 },
 categoryTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-categoryTabText: { fontSize: fontSize.sm, color: colors.textSecondary, textTransform: 'capitalize' },
+categoryTabText: { fontSize: fontSize.sm, lineHeight: 18, color: colors.textSecondary, textTransform: 'capitalize' },
 categoryTabTextActive: { color: colors.black, fontWeight: '600' },
 list: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
 resourceCard: {

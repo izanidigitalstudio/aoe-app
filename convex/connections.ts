@@ -1,16 +1,14 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const sendRequest = mutation({
 args: { toUserId: v.id("users") },
 returns: v.null(),
 handler: async (ctx, args) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) throw new Error("Not authenticated");
+const user = await ctx.db.get(userId);
 if (!user) throw new Error("User not found");
 if (user._id === args.toUserId) throw new Error("Cannot connect with yourself");
 
@@ -46,12 +44,9 @@ accept: v.boolean(),
 },
 returns: v.null(),
 handler: async (ctx, args) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) throw new Error("Not authenticated");
+const user = await ctx.db.get(userId);
 if (!user) throw new Error("User not found");
 
 const connection = await ctx.db.get(args.connectionId);
@@ -81,12 +76,9 @@ isIncoming: v.boolean(),
 })
 ),
 handler: async (ctx) => {
-const identity = await ctx.auth.getUserIdentity();
-if (!identity) return [];
-const user = await ctx.db
-.query("users")
-.withIndex("email", (q) => q.eq("email", identity.email))
-.unique();
+const userId = await getAuthUserId(ctx);
+if (!userId) return [];
+const user = await ctx.db.get(userId);
 if (!user) return [];
 
 const sent = await ctx.db

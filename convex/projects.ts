@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 const projectReturnValidator = v.object({
   _id: v.id("projects"),
@@ -29,14 +30,7 @@ export const listProjects = query({
   },
   returns: v.array(projectReturnValidator),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    let currentUser = null;
-    if (identity) {
-      currentUser = await ctx.db
-        .query("users")
-        .withIndex("email", (q) => q.eq("email", identity.email))
-        .unique();
-    }
+    const currentUserId = await getAuthUserId(ctx);
 
     let projectsQuery;
     if (args.industry) {
@@ -59,11 +53,11 @@ export const listProjects = query({
         .collect();
 
       let isLiked = false;
-      if (currentUser) {
+      if (currentUserId) {
         const like = await ctx.db
           .query("projectLikes")
           .withIndex("by_project_and_user", (q) =>
-            q.eq("projectId", project._id).eq("userId", currentUser!._id)
+            q.eq("projectId", project._id).eq("userId", currentUserId)
           )
           .unique();
         isLiked = !!like;
@@ -108,12 +102,9 @@ export const createProject = mutation({
   },
   returns: v.id("projects"),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", identity.email))
-      .unique();
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const user = await ctx.db.get(userId);
     if (!user) throw new Error("User not found");
 
     return await ctx.db.insert("projects", {
@@ -128,12 +119,9 @@ export const toggleLike = mutation({
   args: { projectId: v.id("projects") },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", identity.email))
-      .unique();
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const user = await ctx.db.get(userId);
     if (!user) throw new Error("User not found");
 
     const existing = await ctx.db
@@ -171,12 +159,9 @@ export const addComment = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", identity.email))
-      .unique();
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const user = await ctx.db.get(userId);
     if (!user) throw new Error("User not found");
 
     await ctx.db.insert("projectComments", {

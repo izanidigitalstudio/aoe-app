@@ -14,21 +14,27 @@ ActivityIndicator,
 KeyboardAvoidingView,
 Platform,
 Dimensions,
-Clipboard,
 Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery, useMutation } from '../lib/mockBackend';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Contacts from 'expo-contacts';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Clipboard from 'expo-clipboard';
+import * as MediaLibrary from 'expo-media-library';
+import { Share } from 'react-native';
+import ViewShot from 'react-native-view-shot';
+import QRCodeStyled from 'react-native-qrcode-styled';
 import { STATE_AGENCIES, StateAgency } from '../data/stateAgencies';
 
 const { width } = Dimensions.get('window');
+
+const REGISTER_URL = 'https://app.aoeafrica.org.za';
 
 type AdminTab = 'overview' | 'members' | 'events' | 'payments' | 'reports' | 'crm';
 type MemberSubTab = 'list' | 'add' | 'bulk' | 'csv' | 'contacts';
@@ -38,7 +44,7 @@ onBack: () => void;
 }
 
 const MEMBER_TYPES = [
-  { key: 'platinum_network', label: 'Platinum Network', icon: 'diamond', color: '#8B5CF6' },
+  { key: 'platinum_network', label: 'AOE Network', icon: 'diamond', color: '#8B5CF6' },
   { key: 'esd_corporate', label: 'ESD Corporate', icon: 'business', color: '#0EA5E9' },
   { key: 'business_community', label: 'Business Community', icon: 'people-circle', color: '#F59E0B' },
   { key: 'entrepreneurs', label: 'Entrepreneurs', icon: 'rocket', color: '#10B981' },
@@ -185,7 +191,7 @@ const [speakerDesignation, setSpeakerDesignation] = useState('');
 const [speakerCompany, setSpeakerCompany] = useState('');
 const [speakerStatus, setSpeakerStatus] = useState('invited');
 const [speakerNotes, setSpeakerNotes] = useState('');
-const [rsvpViewTab, setRsvpViewTab] = useState<'rsvps' | 'speakers' | 'invited' | 'paid' | 'all'>('rsvps');
+const [rsvpViewTab, setRsvpViewTab] = useState<'all' | 'paid' | 'rsvps' | 'speakers' | 'invited'>('all');
 
 // Invited guest form state
 const [showAddInvitedGuest, setShowAddInvitedGuest] = useState(false);
@@ -197,6 +203,68 @@ const [invGuestCompany, setInvGuestCompany] = useState('');
 const [invGuestStatus, setInvGuestStatus] = useState('invited');
 const [invGuestNotes, setInvGuestNotes] = useState('');
 const [editingInvGuestIndex, setEditingInvGuestIndex] = useState<number | null>(null);
+
+// Paid guest form state
+const [showAddPaidGuest, setShowAddPaidGuest] = useState(false);
+const [paidGuestName, setPaidGuestName] = useState('');
+const [paidGuestEmail, setPaidGuestEmail] = useState('');
+const [paidGuestPhone, setPaidGuestPhone] = useState('');
+const [paidGuestDesignation, setPaidGuestDesignation] = useState('');
+const [paidGuestCompany, setPaidGuestCompany] = useState('');
+const [paidGuestAmount, setPaidGuestAmount] = useState('');
+const [paidGuestMethod, setPaidGuestMethod] = useState('bank_transfer');
+const [paidGuestRef, setPaidGuestRef] = useState('');
+const [paidGuestNotes, setPaidGuestNotes] = useState('');
+const [editingPaidGuestIndex, setEditingPaidGuestIndex] = useState<number | null>(null);
+
+// QR Code ref and handlers
+const qrRef = React.useRef<any>(null);
+
+const captureQR = async (): Promise<string | null> => {
+  try {
+    if (qrRef.current && qrRef.current.capture) {
+      return await qrRef.current.capture();
+    }
+    return null;
+  } catch { return null; }
+};
+
+const handleShareQRImage = async () => {
+  try {
+    const uri = await captureQR();
+    if (!uri) { Alert.alert('Error', 'Could not capture QR code.'); return; }
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share AOE Registration QR' });
+    }
+  } catch { Alert.alert('Error', 'Failed to share QR code.'); }
+};
+
+const handleSaveQRToPhotos = async () => {
+  try {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission Required', 'Please grant photo library access.'); return; }
+    const uri = await captureQR();
+    if (!uri) { Alert.alert('Error', 'Could not capture QR code.'); return; }
+    await MediaLibrary.saveToLibraryAsync(uri);
+    Alert.alert('Saved', 'QR code saved to your photo library.');
+  } catch { Alert.alert('Error', 'Failed to save QR code.'); }
+};
+
+const handleShareLink = async () => {
+  try {
+    await Share.share({
+      title: 'Join AOE Africa',
+      message: `Join AOE Africa! Register here: ${REGISTER_URL}`,
+      url: REGISTER_URL,
+    });
+  } catch {}
+};
+
+const handleCopyRegLink = async () => {
+  await Clipboard.setStringAsync(REGISTER_URL);
+  Alert.alert('Copied', 'Registration link copied to clipboard.');
+};
 
 // Queries
 const stats = useQuery(api.admin.getStats);
@@ -257,6 +325,11 @@ const removeGuestSpeakerMut = useMutation(api.admin.removeGuestSpeaker);
 const addInvitedGuestMut = useMutation(api.admin.addInvitedGuest);
 const updateInvitedGuestMut = useMutation(api.admin.updateInvitedGuest);
 const removeInvitedGuestMut = useMutation(api.admin.removeInvitedGuest);
+
+// Paid Guest mutations
+const addPaidGuestMut = useMutation(api.admin.addPaidGuest);
+const updatePaidGuestMut = useMutation(api.admin.updatePaidGuest);
+const removePaidGuestMut = useMutation(api.admin.removePaidGuest);
 
 // Guest speaker edit state
 const [editingSpeakerIndex, setEditingSpeakerIndex] = useState<number | null>(null);
@@ -406,6 +479,84 @@ const openEditInvGuest = (guest: any, index: number) => {
   setInvGuestNotes(guest.notes || '');
   setEditingInvGuestIndex(index);
   setShowAddInvitedGuest(true);
+};
+
+// ─── Paid Guest form functions ───
+const clearPaidGuestForm = () => {
+  setPaidGuestName(''); setPaidGuestEmail(''); setPaidGuestPhone('');
+  setPaidGuestDesignation(''); setPaidGuestCompany('');
+  setPaidGuestAmount(''); setPaidGuestMethod('bank_transfer');
+  setPaidGuestRef(''); setPaidGuestNotes('');
+  setEditingPaidGuestIndex(null);
+};
+
+const handleAddOrEditPaidGuest = async () => {
+  if (!paidGuestName.trim()) {
+    Alert.alert('Required', 'Name is required');
+    return;
+  }
+  if (!selectedEvent) return;
+  try {
+    if (editingPaidGuestIndex !== null) {
+      await updatePaidGuestMut({
+        eventId: selectedEvent._id,
+        index: editingPaidGuestIndex,
+        name: paidGuestName.trim(),
+        email: paidGuestEmail.trim() || undefined,
+        phone: paidGuestPhone.trim() || undefined,
+        designation: paidGuestDesignation.trim() || undefined,
+        company: paidGuestCompany.trim() || undefined,
+        amountPaid: paidGuestAmount ? parseFloat(paidGuestAmount) : undefined,
+        paymentMethod: paidGuestMethod || undefined,
+        paymentRef: paidGuestRef.trim() || undefined,
+        notes: paidGuestNotes.trim() || undefined,
+      });
+      Alert.alert('Updated', 'Paid guest updated');
+    } else {
+      await addPaidGuestMut({
+        eventId: selectedEvent._id,
+        name: paidGuestName.trim(),
+        email: paidGuestEmail.trim() || undefined,
+        phone: paidGuestPhone.trim() || undefined,
+        designation: paidGuestDesignation.trim() || undefined,
+        company: paidGuestCompany.trim() || undefined,
+        amountPaid: paidGuestAmount ? parseFloat(paidGuestAmount) : undefined,
+        paymentMethod: paidGuestMethod || undefined,
+        paymentRef: paidGuestRef.trim() || undefined,
+        notes: paidGuestNotes.trim() || undefined,
+      });
+      Alert.alert('Added', `${paidGuestName} added as paid guest`);
+    }
+    clearPaidGuestForm();
+    setShowAddPaidGuest(false);
+  } catch (e: any) {
+    Alert.alert('Error', e.message);
+  }
+};
+
+const handleRemovePaidGuest = (index: number, name: string) => {
+  if (!selectedEvent) return;
+  Alert.alert('Remove Paid Guest', `Remove ${name}?`, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: async () => {
+      try { await removePaidGuestMut({ eventId: selectedEvent._id, index }); }
+      catch (e: any) { Alert.alert('Error', e.message); }
+    }},
+  ]);
+};
+
+const openEditPaidGuest = (guest: any, index: number) => {
+  setPaidGuestName(guest.name || '');
+  setPaidGuestEmail(guest.email || '');
+  setPaidGuestPhone(guest.phone || '');
+  setPaidGuestDesignation(guest.designation || '');
+  setPaidGuestCompany(guest.company || '');
+  setPaidGuestAmount(guest.amountPaid ? String(guest.amountPaid) : '');
+  setPaidGuestMethod(guest.paymentMethod || 'bank_transfer');
+  setPaidGuestRef(guest.paymentRef || '');
+  setPaidGuestNotes(guest.notes || '');
+  setEditingPaidGuestIndex(index);
+  setShowAddPaidGuest(true);
 };
 
 const handleAddMember = async () => {
@@ -778,7 +929,12 @@ const renderInput = (label: string, value: string, setter: (v: string) => void, 
 const renderChipPicker = (label: string, options: string[], selected: string, onSelect: (v: string) => void) => (
   <View style={styles.inputGroup}>
     <Text style={styles.inputLabel}>{label}</Text>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ marginTop: 4, flexGrow: 0 }}
+      contentContainerStyle={{ paddingVertical: 2, paddingRight: 12, alignItems: 'center' }}
+    >
       {options.map(opt => (
         <TouchableOpacity
           key={opt}
@@ -826,6 +982,98 @@ const renderOverview = () => (
         ))}
       </View>
     )}
+
+    {/* ─── Registration QR Code ─── */}
+    <View style={{
+      backgroundColor: colors.surface,
+      borderRadius: borderRadius.lg,
+      padding: spacing.lg,
+      marginTop: spacing.md,
+      borderWidth: 1,
+      borderColor: colors.primary + '30',
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md, gap: spacing.sm }}>
+        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary + '18', justifyContent: 'center', alignItems: 'center' }}>
+          <Ionicons name="qr-code" size={22} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: fontSize.md, fontWeight: '700', color: colors.text }}>Member Registration QR</Text>
+          <Text style={{ fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 1 }}>Share to invite new members</Text>
+        </View>
+      </View>
+
+      {/* QR Code with ViewShot for capture */}
+      <ViewShot ref={qrRef} options={{ format: 'png', quality: 1.0 }}>
+        <View style={{ alignItems: 'center', backgroundColor: '#fff', borderRadius: borderRadius.md, padding: spacing.md }}>
+          <QRCodeStyled
+            data={REGISTER_URL}
+            style={{ backgroundColor: 'white' }}
+            padding={10}
+            pieceSize={4}
+            pieceBorderRadius={2}
+            color={'#000'}
+          />
+          <Text style={{ marginTop: 8, fontSize: 10, color: '#888', fontWeight: '500' }}>app.aoeafrica.org.za</Text>
+        </View>
+      </ViewShot>
+
+      {/* Registration Link */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.background,
+        borderRadius: borderRadius.md,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginTop: spacing.md,
+        borderWidth: 1,
+        borderColor: colors.border,
+        gap: 8,
+      }}>
+        <Ionicons name="link-outline" size={16} color={colors.primary} />
+        <Text style={{ flex: 1, fontSize: fontSize.sm, color: colors.primary, fontWeight: '500' }} numberOfLines={1}>{REGISTER_URL}</Text>
+        <TouchableOpacity onPress={handleCopyRegLink} style={{ padding: 6, backgroundColor: colors.primary + '15', borderRadius: borderRadius.sm }}>
+          <Ionicons name="copy-outline" size={16} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Action Buttons Grid */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: spacing.md }}>
+        <TouchableOpacity
+          style={{ flex: 1, minWidth: (width - 80) / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, paddingVertical: 12, borderRadius: borderRadius.md }}
+          onPress={handleShareQRImage}
+        >
+          <Ionicons name="share-outline" size={16} color="#000" />
+          <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: '#000' }}>Share QR</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ flex: 1, minWidth: (width - 80) / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.success + '15', paddingVertical: 12, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.success + '40' }}
+          onPress={handleSaveQRToPhotos}
+        >
+          <Ionicons name="download-outline" size={16} color={colors.success} />
+          <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.success }}>Save to Photos</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ flex: 1, minWidth: (width - 80) / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.info + '15', paddingVertical: 12, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.info + '40' }}
+          onPress={handleShareLink}
+        >
+          <Ionicons name="send-outline" size={16} color={colors.info} />
+          <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.info }}>Share Link</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ flex: 1, minWidth: (width - 80) / 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.surface, paddingVertical: 12, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border }}
+          onPress={handleCopyRegLink}
+        >
+          <Ionicons name="copy-outline" size={16} color={colors.textSecondary} />
+          <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.textSecondary }}>Copy Link</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+
+    <View style={{ height: 24 }} />
   </ScrollView>
 );
 
@@ -1713,6 +1961,63 @@ const renderEventFormModal = (visible: boolean, onClose: () => void, onSubmit: (
 };
 
 // ─── MAIN RENDER ───
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  headerTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
+  tabBar: { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border },
+  tabItem: { paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tabItemActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },
+  tabLabel: { fontSize: fontSize.sm, color: colors.textMuted },
+  tabLabelActive: { color: colors.primary, fontWeight: '600' },
+  tabContent: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  sectionTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text, marginBottom: 12 },
+  subSectionTitle: { fontSize: fontSize.md, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  statCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, minWidth: (width - 56) / 2, flex: 1, alignItems: 'center', gap: 4 },
+  statValue: { fontSize: fontSize.xl, fontWeight: '700', color: colors.text },
+  statLabel: { fontSize: fontSize.xs, color: colors.textSecondary },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: 12, height: 44 },
+  searchInput: { flex: 1, color: colors.text, marginLeft: 8, fontSize: fontSize.md },
+  addBtn: { backgroundColor: colors.primary, width: 40, height: 40, borderRadius: borderRadius.md, alignItems: 'center', justifyContent: 'center' },
+  subTabRow: { flexDirection: 'row', marginBottom: 12, gap: 8 },
+  subTab: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: borderRadius.sm, backgroundColor: colors.surface },
+  subTabActive: { backgroundColor: colors.primary },
+  subTabText: { fontSize: fontSize.sm, color: colors.textSecondary },
+  subTabTextActive: { color: colors.white, fontWeight: '600' },
+  memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: 8 },
+  memberName: { fontSize: fontSize.md, fontWeight: '600', color: colors.text },
+  memberSub: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
+  emptyText: { textAlign: 'center', color: colors.textMuted, marginTop: 40, fontSize: fontSize.md },
+  helpText: { color: colors.textSecondary, fontSize: fontSize.sm, marginBottom: 8 },
+  inputGroup: { marginBottom: 14 },
+  inputLabel: { fontSize: fontSize.sm, color: colors.textSecondary, marginBottom: 4 },
+  input: { backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: fontSize.md, borderWidth: 1, borderColor: colors.border },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.surface, marginRight: 8, borderWidth: 1, borderColor: colors.border },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: fontSize.sm, color: colors.textSecondary },
+  chipTextActive: { color: colors.white, fontWeight: '600' },
+  primaryBtn: { backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
+  primaryBtnText: { color: colors.white, fontSize: fontSize.md, fontWeight: '600' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.full, alignSelf: 'flex-start', marginTop: 4 },
+  statusText: { fontSize: fontSize.xs, fontWeight: '600' },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: colors.background, borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl, padding: spacing.md, maxHeight: '90%', flex: 1 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
+  reportRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+  reportLabel: { fontSize: fontSize.sm, color: colors.text, flex: 1 },
+  reportBar: { height: 6, borderRadius: 3, backgroundColor: colors.primary, marginHorizontal: 8 },
+  reportValue: { fontSize: fontSize.sm, color: colors.textSecondary, minWidth: 60, textAlign: 'right' },
+  eventPerfCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: 8 },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, height: 40, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '15' },
+  exportBtnText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  categoryIconContainer: { width: 40, height: 40, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  importMethodBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: borderRadius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginRight: 8 },
+  importMethodText: { fontSize: fontSize.sm, color: colors.textSecondary },
+  importMethodTextActive: { color: colors.white, fontWeight: '600' },
+});
 const tabs: { key: AdminTab; label: string; icon: string }[] = [
   { key: 'overview', label: 'Home', icon: 'grid' },
   { key: 'members', label: 'Members', icon: 'people' },
@@ -1727,7 +2032,7 @@ return (
     {/* Header */}
     <View style={styles.header}>
       <TouchableOpacity onPress={onBack} style={{ padding: 4 }}>
-        <Ionicons name="arrow-back" size={24} count={24} color={colors.text} />
+        <Ionicons name="arrow-back" size={24} color={colors.text} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>Admin Dashboard</Text>
       <View style={{ width: 32 }} />
@@ -1881,7 +2186,7 @@ return (
           {/* Sub-tabs for RSVPs / Speakers / Invited / Paid / All */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 8 }}>
             <View style={styles.subTabRow}>
-              {(['rsvps', 'speakers', 'invited', 'paid', 'all'] as const).map(tab => (
+              {(['all', 'paid', 'rsvps', 'speakers', 'invited'] as const).map(tab => (
                 <TouchableOpacity key={tab} style={[styles.subTab, rsvpViewTab === tab && styles.subTabActive]} onPress={() => setRsvpViewTab(tab)}>
                   <Text style={[styles.subTabText, rsvpViewTab === tab && styles.subTabTextActive]}>
                     {tab === 'rsvps' ? 'RSVPs' : tab === 'speakers' ? 'Speakers' : tab === 'invited' ? 'Invited' : tab === 'paid' ? 'Paid' : 'All'}
@@ -1939,7 +2244,7 @@ return (
                   <Ionicons name="download-outline" size={16} color={colors.primary} />
                   <Text style={styles.exportBtnText}>Export</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.addBtn} onPress={() => { clearSpeakerForm(); setShowAddSpeaker(true); }}>
+                <TouchableOpacity style={styles.addBtn} onPress={() => { setShowEventRsvps(false); setTimeout(() => { clearSpeakerForm(); setShowAddSpeaker(true); }, 300); }}>
                   <Ionicons name="add" size={18} color={colors.white} />
                 </TouchableOpacity>
               </View>
@@ -1957,7 +2262,7 @@ return (
                       </View>
                     </View>
                     <View style={{ gap: 6 }}>
-                      <TouchableOpacity onPress={() => openEditSpeaker(item, index)}>
+                      <TouchableOpacity onPress={() => { setShowEventRsvps(false); setTimeout(() => openEditSpeaker(item, index), 300); }}>
                         <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => handleRemoveSpeaker(index, item.name)}>
@@ -1978,7 +2283,7 @@ return (
                   <Ionicons name="download-outline" size={16} color={colors.primary} />
                   <Text style={styles.exportBtnText}>Export</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.addBtn} onPress={() => { clearInvGuestForm(); setShowAddInvitedGuest(true); }}>
+                <TouchableOpacity style={styles.addBtn} onPress={() => { setShowEventRsvps(false); setTimeout(() => { clearInvGuestForm(); setShowAddInvitedGuest(true); }, 300); }}>
                   <Ionicons name="add" size={18} color={colors.white} />
                 </TouchableOpacity>
               </View>
@@ -1996,10 +2301,10 @@ return (
                       </View>
                     </View>
                     <View style={{ gap: 6 }}>
-                      <TouchableOpacity onPress={() => openEditInvGuest(item, i)}>
+                      <TouchableOpacity onPress={() => { setShowEventRsvps(false); setTimeout(() => openEditInvGuest(item, index), 300); }}>
                         <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleRemoveInvGuest(i, item.name)}>
+                      <TouchableOpacity onPress={() => handleRemoveInvGuest(index, item.name)}>
                         <Ionicons name="trash-outline" size={20} color={colors.error} />
                       </TouchableOpacity>
                     </View>
@@ -2012,24 +2317,47 @@ return (
 
           {rsvpViewTab === 'paid' && (
             <View style={{ flex: 1 }}>
-              <TouchableOpacity style={[styles.exportBtn, { alignSelf: 'flex-end', marginBottom: 8 }]} onPress={() => exportToCSV('paid')}>
-                <Ionicons name="download-outline" size={16} color={colors.primary} />
-                <Text style={styles.exportBtnText}>Export</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+                <TouchableOpacity style={styles.exportBtn} onPress={() => exportToCSV('paid')}>
+                  <Ionicons name="download-outline" size={16} color={colors.primary} />
+                  <Text style={styles.exportBtnText}>Export</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.addBtn} onPress={() => { setShowEventRsvps(false); setTimeout(() => { clearPaidGuestForm(); setShowAddPaidGuest(true); }, 300); }}>
+                  <Ionicons name="add" size={18} color={colors.white} />
+                </TouchableOpacity>
+              </View>
               <FlatList
-                data={(eventRsvps || []).filter((r: any) => r.paymentStatus === 'paid')}
-                keyExtractor={(item: any) => item._id}
+                data={[
+                  ...(selectedEvent?.paidGuests || []).map((g: any, i: number) => ({ ...g, _source: 'manual', _index: i, key: 'paid-' + i })),
+                  ...(eventRsvps || []).filter((r: any) => r.paymentStatus === 'paid').map((r: any) => ({ name: r.userName || 'Unknown', email: r.userEmail, company: r.userCompany, phone: r.userPhone, _source: 'rsvp', key: 'rsvp-' + r._id })),
+                ]}
+                keyExtractor={(item: any) => item.key}
                 showsVerticalScrollIndicator={false}
                 renderItem={({ item }: any) => (
                   <View style={styles.memberCard}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.memberName}>{item.userName || 'Unknown'}</Text>
-                      <Text style={styles.memberSub}>{item.userEmail}</Text>
-                      {item.userCompany && <Text style={styles.memberSub}>{item.userCompany}</Text>}
-                      {item.userPhone && <Text style={styles.memberSub}>{item.userPhone}</Text>}
+                      <Text style={styles.memberName}>{item.name}</Text>
+                      {item.email && <Text style={styles.memberSub}>{item.email}</Text>}
+                      {item.company && <Text style={styles.memberSub}>{item.company}</Text>}
+                      {item.phone && <Text style={styles.memberSub}>{item.phone}</Text>}
+                      {item.designation && <Text style={styles.memberSub}>{item.designation}</Text>}
+                      {item.amountPaid && <Text style={[styles.memberSub, { color: colors.success }]}>Paid: {item.amountPaid}{item.paymentMethod ? ` (${item.paymentMethod})` : ''}</Text>}
+                      {item.paymentRef && <Text style={styles.memberSub}>Ref: {item.paymentRef}</Text>}
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: colors.success + '30' }]}>
-                      <Text style={[styles.statusText, { color: colors.success }]}>Paid</Text>
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      <View style={[styles.statusBadge, { backgroundColor: colors.success + '30' }]}>
+                        <Text style={[styles.statusText, { color: colors.success }]}>{item._source === 'manual' ? 'Paid' : 'RSVP Paid'}</Text>
+                      </View>
+                      {item._source === 'manual' && (
+                        <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                          <TouchableOpacity onPress={() => { setShowEventRsvps(false); setTimeout(() => openEditPaidGuest(item, item._index), 300); }}>
+                            <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => handleRemovePaidGuest(item._index, item.name)}>
+                            <Ionicons name="trash-outline" size={20} color={colors.error} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   </View>
                 )}
@@ -2049,6 +2377,7 @@ return (
                   ...(eventRsvps || []).map((r: any) => ({ type: 'RSVP', name: r.userName || 'Unknown', email: r.userEmail, company: r.userCompany, phone: r.userPhone, status: r.status, paymentStatus: r.paymentStatus, key: 'rsvp-' + r._id })),
                   ...(selectedEvent?.guestSpeakers || []).map((s: any, i: number) => ({ type: 'Speaker', name: s.name, email: s.email, company: s.company, phone: s.phone, status: s.status, paymentStatus: undefined, key: 'speaker-' + i })),
                   ...(selectedEvent?.invitedGuests || []).map((g: any, i: number) => ({ type: 'Invited', name: g.name, email: g.email, company: g.company, phone: g.phone, status: g.status, paymentStatus: undefined, key: 'invited-' + i })),
+                  ...(selectedEvent?.paidGuests || []).map((p: any, i: number) => ({ type: 'Paid', name: p.name, email: p.email, company: p.company, phone: p.phone, status: 'paid', paymentStatus: 'paid', key: 'paid-' + i })),
                 ]}
                 keyExtractor={(item: any) => item.key}
                 showsVerticalScrollIndicator={false}
@@ -2129,6 +2458,33 @@ return (
             {renderInput('Notes', invGuestNotes, setInvGuestNotes, { multiline: true })}
             <TouchableOpacity style={styles.primaryBtn} onPress={handleAddOrEditInvGuest}>
               <Text style={styles.primaryBtnText}>{editingInvGuestIndex !== null ? 'Update' : 'Add Guest'}</Text>
+            </TouchableOpacity>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+
+    {/* Add Paid Guest Modal */}
+    <Modal visible={showAddPaidGuest} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{editingPaidGuestIndex !== null ? 'Update Paid Guest' : 'Add Paid Guest'}</Text>
+            <TouchableOpacity onPress={() => { setShowAddPaidGuest(false); clearPaidGuestForm(); }}><Ionicons name="close" size={24} color={colors.text} /></TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {renderInput('Name *', paidGuestName, setPaidGuestName)}
+            {renderInput('Email', paidGuestEmail, setPaidGuestEmail, { keyboardType: 'email-address' })}
+            {renderInput('Phone', paidGuestPhone, setPaidGuestPhone, { keyboardType: 'phone-pad' })}
+            {renderInput('Designation', paidGuestDesignation, setPaidGuestDesignation)}
+            {renderInput('Company', paidGuestCompany, setPaidGuestCompany)}
+            {renderInput('Amount *', paidGuestAmount, setPaidGuestAmount, { keyboardType: 'numeric' })}
+            {renderChipPicker('Method', PAYMENT_METHODS, paidGuestMethod, setPaidGuestMethod)}
+            {renderInput('Reference', paidGuestRef, setPaidGuestRef)}
+            {renderInput('Notes', paidGuestNotes, setPaidGuestNotes, { multiline: true })}
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleAddOrEditPaidGuest}>
+              <Text style={styles.primaryBtnText}>{editingPaidGuestIndex !== null ? 'Update' : 'Add Paid Guest'}</Text>
             </TouchableOpacity>
             <View style={{ height: 40 }} />
           </ScrollView>
@@ -2390,65 +2746,7 @@ return (
     </Modal>
   </SafeAreaView>
 );
-}
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  headerTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
-  tabBar: { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.border },
-  tabItem: { paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tabItemActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },
-  tabLabel: { fontSize: fontSize.sm, color: colors.textMuted },
-  tabLabelActive: { color: colors.primary, fontWeight: '600' },
-  tabContent: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.md },
-  sectionTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text, marginBottom: 12 },
-  subSectionTitle: { fontSize: fontSize.md, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
-  statCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, minWidth: (width - 56) / 2, flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { fontSize: fontSize.xl, fontWeight: '700', color: colors.text },
-  statLabel: { fontSize: fontSize.xs, color: colors.textSecondary },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: 12, height: 44 },
-  searchInput: { flex: 1, color: colors.text, marginLeft: 8, fontSize: fontSize.md },
-  addBtn: { backgroundColor: colors.primary, width: 40, height: 40, borderRadius: borderRadius.md, alignItems: 'center', justifyContent: 'center' },
-  subTabRow: { flexDirection: 'row', marginBottom: 12, gap: 8 },
-  subTab: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: borderRadius.sm, backgroundColor: colors.surface },
-  subTabActive: { backgroundColor: colors.primary },
-  subTabText: { fontSize: fontSize.sm, color: colors.textSecondary },
-  subTabTextActive: { color: colors.white, fontWeight: '600' },
-  memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: 8 },
-  memberName: { fontSize: fontSize.md, fontWeight: '600', color: colors.text },
-  memberSub: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  emptyText: { textAlign: 'center', color: colors.textMuted, marginTop: 40, fontSize: fontSize.md },
-  helpText: { color: colors.textSecondary, fontSize: fontSize.sm, marginBottom: 8 },
-  inputGroup: { marginBottom: 14 },
-  inputLabel: { fontSize: fontSize.sm, color: colors.textSecondary, marginBottom: 4 },
-  input: { backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: fontSize.md, borderWidth: 1, borderColor: colors.border },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.surface, marginRight: 8, borderWidth: 1, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: fontSize.sm, color: colors.textSecondary },
-  chipTextActive: { color: colors.white, fontWeight: '600' },
-  primaryBtn: { backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
-  primaryBtnText: { color: colors.white, fontSize: fontSize.md, fontWeight: '600' },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.full, alignSelf: 'flex-start', marginTop: 4 },
-  statusText: { fontSize: fontSize.xs, fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: colors.background, borderTopLeftRadius: borderRadius.xl, borderTopRightRadius: borderRadius.xl, padding: spacing.md, maxHeight: '90%', flex: 1 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
-  reportRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
-  reportLabel: { fontSize: fontSize.sm, color: colors.text, flex: 1 },
-  reportBar: { height: 6, borderRadius: 3, backgroundColor: colors.primary, marginHorizontal: 8 },
-  reportValue: { fontSize: fontSize.sm, color: colors.textSecondary, minWidth: 60, textAlign: 'right' },
-  eventPerfCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: 8 },
-  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, height: 40, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '15' },
-  exportBtnText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
-  categoryIconContainer: { width: 40, height: 40, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
-  importMethodBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: borderRadius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginRight: 8 },
-  importMethodText: { fontSize: fontSize.sm, color: colors.textSecondary },
-  importMethodTextActive: { color: colors.white, fontWeight: '600' },
-});
 
 function parseCSVLines(lines: string[]): string[][] {
   return lines.map((line: string) => {
@@ -2474,4 +2772,6 @@ function parseCSVLines(lines: string[]): string[][] {
     parts.push(current.trim());
     return parts;
   }).filter((parts: string[]) => parts.some((p: string) => p.length > 0));
+}
+
 }

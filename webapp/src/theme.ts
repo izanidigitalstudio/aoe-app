@@ -1,0 +1,32 @@
+export const colors = {
+  primary: "#C8932E",
+  primaryDark: "#A67825",
+  primaryLight: "#E8C068",
+  accent: "#1B6B4A",
+  accentLight: "#2A8C62",
+  background: "#060D1A",
+  surface: "#0A1322",
+  surfaceLight: "#101E30",
+  card: "#0D1929",
+  text: "#FFFFFF",
+  textSecondary: "#A0A0A0",
+  textMuted: "#666666",
+  success: "#2A8C62",
+  warning: "#C8932E",
+  error: "#D94040",
+  info: "#3B82F6",
+  border: "#1A2A42",
+  borderLight: "#243752",
+  white: "#FFFFFF",
+  black: "#000000",
+  overlay: "rgba(0,0,0,0.6)",
+};
+
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
+};

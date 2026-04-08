@@ -18,7 +18,7 @@ ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery, useMutation } from '../lib/mockBackend';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import { useDemo } from '../lib/DemoContext';
@@ -26,6 +26,33 @@ import { useDemo } from '../lib/DemoContext';
 const { width } = Dimensions.get('window');
 
 type TabType = 'discover' | 'connections' | 'messages';
+
+// Generate a unique profile image URL based on the person's name
+function getProfileImage(name?: string | null) {
+  const displayName = name || 'person';
+  // Simple hash from name to get a unique numeric seed
+  let hash = 0;
+  for (let i = 0; i < displayName.length; i++) {
+    hash = ((hash << 5) - hash) + displayName.charCodeAt(i);
+    hash |= 0;
+  }
+  const seed = Math.abs(hash);
+
+  const genders = ['man', 'woman'];
+  const ages = ['young', 'middle-aged', 'mature'];
+  const styles = ['professional headshot', 'corporate portrait', 'business photo', 'executive portrait', 'linkedin profile photo'];
+  const backgrounds = ['modern office', 'neutral gray studio', 'warm bokeh', 'bright white studio', 'city skyline'];
+  const attire = ['dark suit and tie', 'smart casual blazer', 'colorful African print', 'formal business dress', 'crisp white shirt'];
+
+  const gender = genders[seed % genders.length];
+  const age = ages[seed % ages.length];
+  const style = styles[seed % styles.length];
+  const bg = backgrounds[Math.floor(seed / 3) % backgrounds.length];
+  const att = attire[Math.floor(seed / 7) % attire.length];
+
+  const prompt = `${style} of a ${age} African ${gender}, ${att}, ${bg} background, photorealistic, sharp focus`;
+  return `https://api.a0.dev/assets/image?text=${encodeURIComponent(prompt)}&aspect=1:1&seed=${seed}`;
+}
 
 const INDUSTRIES = [
 'All',
@@ -105,13 +132,17 @@ return true;
 return false;
 };
 
-const handleConnect = async (userId: any) => {
+const handleConnect = async (userId: any, member?: any) => {
 if (demoGuard('connect with members')) return;
 try {
-await sendRequest({ toUserId: userId });
-Alert.alert('Sent', 'Connection request sent!');
+// Send connection request in background
+sendRequest({ toUserId: userId }).catch(() => {});
+// Open chat directly
+const convoId = await getOrCreateConvo({ otherUserId: userId });
+setChatConvoId(convoId);
+setChatMember(member || members?.find((m) => m._id === userId) || { _id: userId, name: 'Member' });
 } catch (e: any) {
-Alert.alert('Error', e.message || 'Failed to send request');
+Alert.alert('Error', e.message || 'Failed to start conversation');
 }
 };
 
@@ -162,7 +193,7 @@ onPress={() => setSelectedMember(member)}
 activeOpacity={0.7}
 >
 <Image
-source={{ uri: member.image || `https://api.a0.dev/assets/image?text=portrait+african+entrepreneur&aspect=1:1&seed=999` }}
+source={{ uri: member.image || getProfileImage(member.name) }}
 style={styles.avatar}
 />
 <View style={styles.memberInfo}>
@@ -207,7 +238,7 @@ handleMessage(member);
 style={styles.connectBtn}
 onPress={(e) => {
 e.stopPropagation?.();
-handleConnect(member._id);
+handleConnect(member._id, member);
 }}
 >
 <Ionicons name="person-add" size={14} color={colors.primary} />
@@ -241,7 +272,7 @@ return (
 {/* Profile Header */}
 <View style={styles.profileHeader}>
 <Image
-source={{ uri: m.image || `https://api.a0.dev/assets/image?text=portrait&aspect=1:1&seed=999` }}
+source={{ uri: m.image || getProfileImage(m.name) }}
 style={styles.profileImage}
 />
 <Text style={styles.profileName}>{m.name}</Text>
@@ -288,7 +319,7 @@ handleMessage(m);
 ) : (
 <TouchableOpacity
 style={[styles.actionBtn, styles.actionBtnPrimary]}
-onPress={() => handleConnect(m._id)}
+onPress={() => handleConnect(m._id, m)}
 >
 <Ionicons name="person-add" size={18} color={colors.black} />
 <Text style={[styles.actionBtnText, { color: colors.black }]}>Connect</Text>
@@ -378,6 +409,14 @@ onPress={() => Linking.openURL(`tel:${m.contactPhone}`)}
 <Text style={styles.contactText}>{m.contactPhone}</Text>
 <Ionicons name="open-outline" size={14} color={colors.textMuted} />
 </TouchableOpacity>
+)}
+{m.physicalAddress && (
+<View style={styles.contactRow}>
+<View style={styles.contactIcon}>
+<Ionicons name="business" size={16} color={colors.primary} />
+</View>
+<Text style={styles.contactText}>{m.physicalAddress}</Text>
+</View>
 )}
 {m.linkedIn && (
 <TouchableOpacity
@@ -627,7 +666,7 @@ Pending Requests ({pendingIncoming.length})
 {pendingIncoming.map((conn) => (
 <View key={conn._id} style={styles.memberCard}>
 <Image
-source={{ uri: conn.image || `https://api.a0.dev/assets/image?text=portrait&aspect=1:1&seed=999` }}
+source={{ uri: conn.image || getProfileImage(conn.name) }}
 style={styles.avatar}
 />
 <View style={styles.memberInfo}>
@@ -670,7 +709,7 @@ if (member) setSelectedMember(member);
 }}
 >
 <Image
-source={{ uri: conn.image || `https://api.a0.dev/assets/image?text=portrait&aspect=1:1&seed=999` }}
+source={{ uri: conn.image || getProfileImage(conn.name) }}
 style={styles.avatar}
 />
 <View style={styles.memberInfo}>
@@ -727,7 +766,7 @@ role: convo.otherUserRole,
 }}
 >
 <Image
-source={{ uri: convo.otherUserImage || `https://api.a0.dev/assets/image?text=portrait&aspect=1:1&seed=999` }}
+source={{ uri: convo.otherUserImage || getProfileImage(convo.otherUserName) }}
 style={styles.avatar}
 />
 <View style={styles.convoInfo}>
@@ -836,12 +875,16 @@ fontSize: fontSize.sm,
 // Filter
 filterRow: {
 paddingHorizontal: spacing.lg,
+paddingTop: 2,
 paddingBottom: spacing.md,
+paddingRight: spacing.xl,
 gap: spacing.xs,
 flexDirection: 'row',
 alignItems: 'center',
 },
 filterChip: {
+minHeight: 38,
+justifyContent: 'center',
 paddingHorizontal: spacing.md,
 paddingVertical: 8,
 borderRadius: borderRadius.full,
@@ -854,7 +897,7 @@ filterChipActive: {
 backgroundColor: colors.primary + '20',
 borderColor: colors.primary,
 },
-filterChipText: { fontSize: fontSize.xs, color: colors.textSecondary },
+filterChipText: { fontSize: fontSize.sm, lineHeight: 18, color: colors.text },
 filterChipTextActive: { color: colors.primary, fontWeight: '600' },
 
 // List
@@ -1253,5 +1296,3 @@ justifyContent: 'center',
 alignItems: 'center',
 },
 });
-
-// ... existing code ...

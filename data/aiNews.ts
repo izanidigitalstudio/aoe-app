@@ -13,6 +13,22 @@ export const AI_NEWS_CATEGORIES = [
 
 export const AI_NEWS: AINewsArticle[] = [
 {
+title: 'How Africa\'s Data Centres Are Evolving to Support the Continent\'s AI Surge',
+summary: 'Africa Data Centres CEO Adil El Youssefi explores how AI adoption across African industries — from banking fraud detection to logistics optimisation and healthcare diagnostics — is driving urgent demand for modern, AI-ready data centre infrastructure. Without local high-performance compute facilities, workloads pushed offshore face increased latency, higher costs, and data sovereignty concerns.',
+source: 'BusinessTech',
+category: 'Infrastructure',
+date: 'Mar 2026',
+url: 'https://businesstech.co.za/news/industry-news/855413/how-africas-data-centres-are-evolving-to-support-the-continents-ai-surge/',
+},
+{
+title: 'Starlink\'s Rapid Expansion Across Africa Amid Regulatory Challenges',
+summary: 'Starlink has expanded rapidly across Africa, operating in over 25 countries including Nigeria, Kenya, Zambia, and Mozambique with high-speed, low-latency satellite internet. However, it faces significant regulatory hurdles in Southern Africa: South Africa has not licensed Starlink due to local ownership requirements despite ~14,000 residents using international roaming, and Namibia officially declined Starlink\'s applications in March 2026, citing lack of local shareholding. The company continues exploring partnerships with Vodacom and MTN for remote area coverage.',
+source: 'TeleGeography',
+category: 'Infrastructure',
+date: 'Mar 2026',
+url: 'https://www.telegeography.com/',
+},
+{
 title: 'AfDB and UNDP Launch $10 Billion AI Initiative for 40 Million African Jobs',
 summary: 'The African Development Bank and UNDP launched the AI 10 Billion Initiative at the Nairobi AI Forum, aiming to mobilise $10 billion by 2035 to support AI-driven innovation, infrastructure, and skills development. The programme targets creating 40 million new jobs across Africa through investments in data, compute, skills, trust, and capital.',
 source: 'Africa Solutions Media Hub',

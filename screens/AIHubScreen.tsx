@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import {
 View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput,
 FlatList, Linking, Dimensions, SectionList, ActivityIndicator, Image,
@@ -7,6 +8,7 @@ Alert, KeyboardAvoidingView, Platform,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Feather } from '@expo/vector-icons';
+import * as Calendar from 'expo-calendar';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import { AFRICAN_VCS, Funder } from '../data/africanVCs';
 import { AI_TOOLS, AITool } from '../data/aiTools';
@@ -17,10 +19,8 @@ import { SA_PODCASTS, Podcast, PODCAST_CATEGORIES } from '../data/podcasts';
 import { AI_NEWS, AINewsArticle, AI_NEWS_CATEGORIES } from '../data/aiNews';
 import { SETAS, SETA } from '../data/setas';
 import { STATE_AGENCIES, StateAgency } from '../data/stateAgencies';
-import { useRoute } from '@react-navigation/native';
-import { useQuery, useMutation } from '../lib/mockBackend';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
-
 const { width } = Dimensions.get('window');
 
 type HubTab = 'funders' | 'tools' | 'guides' | 'cases' | 'conferences' | 'podcasts' | 'news' | 'setas' | 'stateAgencies';
@@ -290,6 +290,198 @@ const DELEGATE_TYPES = [
   { key: 'exhibitor', label: 'Exhibitor' },
 ] as const;
 
+function buildGoogleCalendarUrl(conference: ProcessedConference): string | null {
+  const monthMap: Record<string, number> = {
+    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+  };
+
+  const dateStr = conference.passed ? conference.originalDate : conference.date;
+  if (dateStr.startsWith('TBA')) return null;
+
+  let startDate: Date | null = null;
+  let endDate: Date | null = null;
+
+  // "Feb 2-5, 2026" or "Nov 17-19, 2026" - same month range
+  const rangeMatch = dateStr.match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+  if (rangeMatch && monthMap[rangeMatch[1]] !== undefined) {
+    startDate = new Date(parseInt(rangeMatch[4]), monthMap[rangeMatch[1]], parseInt(rangeMatch[2]));
+    endDate = new Date(parseInt(rangeMatch[4]), monthMap[rangeMatch[1]], parseInt(rangeMatch[3]) + 1); // all-day events need next day
+  }
+
+  // "Mar 30 - Apr 1, 2026" cross-month range
+  const crossMonth = dateStr.match(/^([A-Za-z]+)\s+(\d+)\s*-\s*([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (!startDate && crossMonth && monthMap[crossMonth[1]] !== undefined && monthMap[crossMonth[3]] !== undefined) {
+    startDate = new Date(parseInt(crossMonth[5]), monthMap[crossMonth[1]], parseInt(crossMonth[2]));
+    endDate = new Date(parseInt(crossMonth[5]), monthMap[crossMonth[3]], parseInt(crossMonth[4]) + 1);
+  }
+
+  // "Jun 2026" month only
+  const monthOnly = dateStr.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (!startDate && monthOnly && monthMap[monthOnly[1]] !== undefined) {
+    startDate = new Date(parseInt(monthOnly[2]), monthMap[monthOnly[1]], 1);
+    endDate = new Date(parseInt(monthOnly[2]), monthMap[monthOnly[1]], 2);
+  }
+
+  // "Feb 12, 2026" single day
+  const singleDay = dateStr.match(/^([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (!startDate && singleDay && monthMap[singleDay[1]] !== undefined) {
+    startDate = new Date(parseInt(singleDay[3]), monthMap[singleDay[1]], parseInt(singleDay[2]));
+    endDate = new Date(parseInt(singleDay[3]), monthMap[singleDay[1]], parseInt(singleDay[2]) + 1);
+  }
+
+  if (!startDate || !endDate) return null;
+
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}${m}${day}`;
+  };
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: conference.name,
+    dates: `${fmt(startDate)}/${fmt(endDate)}`,
+    details: `${conference.description}\n\nFocus: ${conference.focus}\nAttendees: ${conference.attendees}\nWebsite: ${conference.website}`,
+    location: `${conference.location}, ${conference.country}`,
+  });
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+// ==================== NATIVE CALENDAR HELPERS ====================
+function parseConferenceDates(conference: ProcessedConference): { start: Date; end: Date } | null {
+  const monthMap: Record<string, number> = {
+    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+  };
+  const dateStr = conference.passed ? conference.originalDate : conference.date;
+  if (dateStr.startsWith('TBA')) return null;
+
+  // "Feb 2-5, 2026" same month range
+  const rangeMatch = dateStr.match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+  if (rangeMatch && monthMap[rangeMatch[1]] !== undefined) {
+    return {
+      start: new Date(parseInt(rangeMatch[4]), monthMap[rangeMatch[1]], parseInt(rangeMatch[2]), 9, 0),
+      end: new Date(parseInt(rangeMatch[4]), monthMap[rangeMatch[1]], parseInt(rangeMatch[3]), 18, 0),
+    };
+  }
+  // "Mar 30 - Apr 1, 2026" cross-month
+  const crossMonth = dateStr.match(/^([A-Za-z]+)\s+(\d+)\s*-\s*([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (crossMonth && monthMap[crossMonth[1]] !== undefined && monthMap[crossMonth[3]] !== undefined) {
+    return {
+      start: new Date(parseInt(crossMonth[5]), monthMap[crossMonth[1]], parseInt(crossMonth[2]), 9, 0),
+      end: new Date(parseInt(crossMonth[5]), monthMap[crossMonth[3]], parseInt(crossMonth[4]), 18, 0),
+    };
+  }
+  // "Jun 2026" month only
+  const monthOnly = dateStr.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monthOnly && monthMap[monthOnly[1]] !== undefined) {
+    return {
+      start: new Date(parseInt(monthOnly[2]), monthMap[monthOnly[1]], 1, 9, 0),
+      end: new Date(parseInt(monthOnly[2]), monthMap[monthOnly[1]], 1, 18, 0),
+    };
+  }
+  // "Feb 12, 2026" single day
+  const singleDay = dateStr.match(/^([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (singleDay && monthMap[singleDay[1]] !== undefined) {
+    return {
+      start: new Date(parseInt(singleDay[3]), monthMap[singleDay[1]], parseInt(singleDay[2]), 9, 0),
+      end: new Date(parseInt(singleDay[3]), monthMap[singleDay[1]], parseInt(singleDay[2]), 18, 0),
+    };
+  }
+  return null;
+}
+
+async function getDefaultCalendarId(): Promise<string | null> {
+  const { status } = await Calendar.requestCalendarPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert('Permission Required', 'Calendar permission is needed to add events. Please enable it in your device settings.');
+    return null;
+  }
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  // Prefer default calendar or first writable one
+  const defaultCal = calendars.find(c => c.allowsModifications && c.isPrimary)
+    || calendars.find(c => c.allowsModifications && c.source?.name === 'iCloud')
+    || calendars.find(c => c.allowsModifications && c.source?.name?.includes('Google'))
+    || calendars.find(c => c.allowsModifications);
+  if (!defaultCal) {
+    // Create a new calendar on iOS if none found
+    if (Platform.OS === 'ios') {
+      const defaultSource = calendars.find(c => c.source?.type === 'local')?.source
+        || calendars.find(c => c.source?.name === 'iCloud')?.source
+        || calendars[0]?.source;
+      if (defaultSource) {
+        const newCalId = await Calendar.createCalendarAsync({
+          title: 'Conference Calendar',
+          color: '#4F46E5',
+          entityType: Calendar.EntityTypes.EVENT,
+          sourceId: defaultSource.id,
+          source: defaultSource,
+          name: 'conferenceCalendar',
+          ownerAccount: 'personal',
+          accessLevel: Calendar.CalendarAccessLevel.OWNER,
+        });
+        return newCalId;
+      }
+    }
+    Alert.alert('No Calendar Found', 'No writable calendar found on your device.');
+    return null;
+  }
+  return defaultCal.id;
+}
+
+async function addConferenceToNativeCalendar(conference: ProcessedConference): Promise<boolean> {
+  const dates = parseConferenceDates(conference);
+  if (!dates) return false;
+  const calId = await getDefaultCalendarId();
+  if (!calId) return false;
+  try {
+    await Calendar.createEventAsync(calId, {
+      title: conference.name,
+      startDate: dates.start,
+      endDate: dates.end,
+      allDay: true,
+      location: `${conference.location}, ${conference.country}`,
+      notes: `${conference.description}\n\nFocus: ${conference.focus}\nAttendees: ${conference.attendees}\nWebsite: ${conference.website}`,
+      url: conference.website,
+    });
+    return true;
+  } catch (e) {
+    console.error('Failed to add calendar event:', e);
+    return false;
+  }
+}
+
+async function syncAllConferencesToCalendar(conferences: ProcessedConference[]): Promise<{ added: number; skipped: number }> {
+  const upcoming = conferences.filter(c => !c.passed && parseConferenceDates(c) !== null);
+  const calId = await getDefaultCalendarId();
+  if (!calId) return { added: 0, skipped: 0 };
+
+  let added = 0;
+  let skipped = 0;
+  for (const conf of upcoming) {
+    const dates = parseConferenceDates(conf);
+    if (!dates) { skipped++; continue; }
+    try {
+      await Calendar.createEventAsync(calId, {
+        title: conf.name,
+        startDate: dates.start,
+        endDate: dates.end,
+        allDay: true,
+        location: `${conf.location}, ${conf.country}`,
+        notes: `${conf.description}\n\nFocus: ${conf.focus}\nAttendees: ${conf.attendees}\nWebsite: ${conf.website}`,
+        url: conf.website,
+      });
+      added++;
+    } catch (e) {
+      skipped++;
+    }
+  }
+  return { added, skipped };
+}
+
 function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedConference; onClose: () => void }) {
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -432,12 +624,74 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
             )}
           </View>
 
+          {/* Contact Emails */}
+          {(conference.contactEmail || conference.speakerEmail) && (
+            <View style={cdStyles.section}>
+              <Text style={cdStyles.sectionTitle}>Contact Emails</Text>
+              {conference.contactEmail && (
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm }} onPress={() => Linking.openURL(`mailto:${conference.contactEmail}`)}>
+                  <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="mail" size={16} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' }}>Delegate Bookings & General Enquiries</Text>
+                    <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginTop: 2 }}>{conference.contactEmail}</Text>
+                  </View>
+                  <Ionicons name="open-outline" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              {conference.speakerEmail && (
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => Linking.openURL(`mailto:${conference.speakerEmail}?subject=Speaker%20Proposition%20-%20${encodeURIComponent(conference.name)}`)}>
+                  <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.accent + '15', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="mic" size={16} color={colors.accentLight} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' }}>Speaker Proposition</Text>
+                    <Text style={{ fontSize: fontSize.sm, color: colors.accentLight, fontWeight: '600', marginTop: 2 }}>{conference.speakerEmail}</Text>
+                  </View>
+                  <Ionicons name="open-outline" size={14} color={colors.accentLight} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Website Button */}
           <TouchableOpacity style={cdStyles.websiteBtn} onPress={() => Linking.openURL(conference.website)}>
             <Ionicons name="globe-outline" size={18} color={colors.black} />
             <Text style={cdStyles.websiteBtnText}>Visit Conference Website</Text>
             <Ionicons name="open-outline" size={16} color={colors.black} />
           </TouchableOpacity>
+
+          {/* Add to Google Calendar */}
+          {(() => {
+            const calUrl = buildGoogleCalendarUrl(conference);
+            if (!calUrl) return null;
+            return (
+              <TouchableOpacity
+                style={[cdStyles.websiteBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.sm }]}
+                onPress={() => Linking.openURL(calUrl)}
+              >
+                <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                <Text style={[cdStyles.websiteBtnText, { color: colors.primary }]}>Add to Google Calendar</Text>
+                <Ionicons name="open-outline" size={16} color={colors.primary} />
+              </TouchableOpacity>
+            );
+          })()}
+
+          {/* Add to Device Calendar (syncs with Google Calendar) */}
+          {!conference.passed && parseConferenceDates(conference) && (
+            <TouchableOpacity
+              style={[cdStyles.websiteBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.success, marginBottom: spacing.md }]}
+              onPress={async () => {
+                const ok = await addConferenceToNativeCalendar(conference);
+                if (ok) Alert.alert('Added to Calendar', `"${conference.name}" has been added to your device calendar.`);
+              }}
+            >
+              <Ionicons name="phone-portrait-outline" size={18} color={colors.success} />
+              <Text style={[cdStyles.websiteBtnText, { color: colors.success }]}>Add to Device Calendar</Text>
+              <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+            </TouchableOpacity>
+          )}
 
           {/* Existing Request Status */}
           {existingRequest && (
@@ -517,80 +771,115 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
 }
 
 function ConferencesView() {
-const [selectedConference, setSelectedConference] = useState<ProcessedConference | null>(null);
-const [filterFocus, setFilterFocus] = useState('All');
-const [filterCountry, setFilterCountry] = useState('All');
-const [search, setSearch] = useState('');
-const focuses = ['All', 'AI', 'Technology', 'Investment', 'Entrepreneurship', 'Infrastructure'];
-const filtered = CONFERENCES.filter(c => {
-const mf = filterFocus === 'All' || c.focus === filterFocus;
-const mc = filterCountry === 'All' || c.country === filterCountry;
-const ms = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.country.toLowerCase().includes(search.toLowerCase()) || c.location.toLowerCase().includes(search.toLowerCase());
-return mf && mc && ms;
-});
-const sections = groupByMonth(filtered);
-return (
-<View style={{ flex: 1 }}>
-<View style={styles.searchBar}>
-<Ionicons name="search" size={18} color={colors.textMuted} />
-<TextInput style={styles.searchInput} placeholder="Search conferences..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
-{search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
-</View>
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-{focuses.map((f: any) => (<TouchableOpacity key={f} style={[styles.confChip, filterFocus === f && styles.confChipActive]} onPress={() => setFilterFocus(f)}><Text style={[styles.confChipText, filterFocus === f && styles.confChipTextActive]}>{f}</Text></TouchableOpacity>))}
-</ScrollView>
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-{COUNTRIES.map((c: any) => (<TouchableOpacity key={c} style={[styles.confChip, filterCountry === c && styles.confChipActive]} onPress={() => setFilterCountry(c)}><Text style={[styles.confChipText, filterCountry === c && styles.confChipTextActive]}>{c}</Text></TouchableOpacity>))}
-</ScrollView>
-<Text style={styles.resultCount}>{filtered.length} conferences found</Text>
-<SectionList
-sections={sections}
-keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-stickySectionHeadersEnabled={false}
-renderSectionHeader={({ section }: { section: { title: string; data: ProcessedConference[] } }) => {
-  const isLiveSection = section.title === '🔴 Happening Now';
-  const isPastSection = section.title === 'Returning in 2027';
+  const [selectedConference, setSelectedConference] = useState<ProcessedConference | null>(null);
+  const [filterFocus, setFilterFocus] = useState('All');
+  const [filterCountry, setFilterCountry] = useState('All');
+  const [filterMonth, setFilterMonth] = useState('All');
+  const [search, setSearch] = useState('')
+  const [syncing, setSyncing] = useState(false);
+  const focuses = ['All', 'AI', 'Technology', 'Investment', 'Entrepreneurship', 'Infrastructure'];
+
+  // Fetch any additional conferences from Convex (admin-added)
+  const convexConferences = useQuery(api.conferences.list, {}) ?? [];
+
+  // Use static data as base, merge Convex additions (avoid duplicates by name)
+  const staticNames = new Set(CONFERENCES.map(c => c.name));
+  const convexAdditions: ProcessedConference[] = convexConferences
+    .filter((c: any) => !staticNames.has(c.name))
+    .map((c: any) => ({
+      ...c,
+      passed: false,
+      isLive: false,
+      originalDate: c.date,
+    }));
+  const allConferences = [...CONFERENCES, ...convexAdditions];
+
+  // Derive unique month labels from conferences in order
+  const monthLabels = (() => {
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    allConferences.forEach(c => {
+      const label = getMonthLabel(c.date);
+      if (label !== 'Other' && !seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
+    });
+    return labels;
+  })();
+  const MONTHS = ['All', ...monthLabels];
+
+  const filtered = allConferences.filter(c => {
+    const mf = filterFocus === 'All' || c.focus === filterFocus;
+    const mc = filterCountry === 'All' || c.country === filterCountry;
+    const mm = filterMonth === 'All' || getMonthLabel(c.date) === filterMonth;
+    const ms = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.country.toLowerCase().includes(search.toLowerCase()) || c.location.toLowerCase().includes(search.toLowerCase());
+    return mf && mc && mm && ms;
+  });
+  const sections = groupByMonth(filtered);
+  
   return (
-    <View style={[styles.confSectionHeader, isLiveSection && { backgroundColor: '#00C85320', borderColor: '#00C853', borderWidth: 1, borderRadius: borderRadius.md, paddingHorizontal: 12, paddingVertical: 8 }]}>
-      <Ionicons name={isPastSection ? 'time' : isLiveSection ? 'radio' : 'calendar'} size={16} color={isPastSection ? colors.textMuted : isLiveSection ? '#00C853' : colors.primary} />
-      <Text style={[styles.confSectionTitle, isPastSection && { color: colors.textMuted }, isLiveSection && { color: '#00C853', fontWeight: '800' }]}>{section.title}</Text>
-      <View style={[styles.confSectionCount, isLiveSection && { backgroundColor: '#00C853' }]}><Text style={[styles.confSectionCountText, isLiveSection && { color: '#fff' }]}>{section.data.length}</Text></View>
+    <View style={{ flex: 1 }}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput style={styles.searchInput} placeholder="Search conferences..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
+        {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+        {focuses.map((f: any) => (<TouchableOpacity key={f} style={[styles.confChip, filterFocus === f && styles.confChipActive]} onPress={() => setFilterFocus(f)}><Text style={[styles.confChipText, filterFocus === f && styles.confChipTextActive]}>{f}</Text></TouchableOpacity>))}</ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+        {COUNTRIES.map((c: any) => (<TouchableOpacity key={c} style={[styles.confChip, filterCountry === c && styles.confChipActive]} onPress={() => setFilterCountry(c)}><Text style={[styles.confChipText, filterCountry === c && styles.confChipTextActive]}>{c}</Text></TouchableOpacity>))}</ScrollView>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+        {MONTHS.map((m: any) => (<TouchableOpacity key={m} style={[styles.confChip, filterMonth === m && styles.confChipActive]} onPress={() => setFilterMonth(m)}><Text style={[styles.confChipText, filterMonth === m && styles.confChipTextActive]}>{m}</Text></TouchableOpacity>))}</ScrollView>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
+        <Text style={[styles.resultCount, { marginBottom: 0, paddingHorizontal: 0 }]}>{filtered.length} conferences found</Text>
+      </View>
+      <SectionList
+        sections={sections}
+        keyExtractor={(item: any, i: number) => `${item._id || item.name}-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }: { section: { title: string; data: ProcessedConference[] } }) => (
+          <View style={[styles.confSectionHeader]}>
+            <Ionicons name="calendar" size={16} color={colors.primary} />
+            <Text style={[styles.confSectionTitle]}>{section.title}</Text>
+            <View style={[styles.confSectionCount]}><Text style={[styles.confSectionCountText]}>{section.data.length}</Text></View>
+          </View>
+        )}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={[styles.confCard, item.isLive && { borderColor: '#00C85360', borderWidth: 1.5 }]} onPress={() => setSelectedConference(item)}>
+            <View style={styles.confHeader}>
+              <View style={[styles.confIcon]}><Feather name={item.icon as any} size={22} color={colors.primary} /></View>
+              <View style={{ flex: 1 }}><Text style={[styles.confName]}>{item.name}</Text><Text style={styles.confFocus}>{item.focus} • {item.country}</Text></View>
+              <View style={styles.confAttendeeBadge}><Ionicons name="people" size={10} color={colors.primary} /><Text style={styles.confAttendeeText}>{item.attendees}</Text></View>
+            </View>
+            <Text style={styles.confDesc} numberOfLines={2}>{item.description}</Text>
+            <View style={styles.confFooter}>
+              <View style={[styles.confDateBadge, item.isLive && { backgroundColor: '#00C85320' }]}><Ionicons name={item.isLive ? 'radio' : 'calendar'} size={12} color={item.isLive ? '#00C853' : colors.primary} /><Text style={[styles.confDateText, item.isLive && { color: '#00C853', fontWeight: '700' }]}>{item.date}</Text></View>
+              <View style={styles.confMetaItem}><Ionicons name="location" size={12} color={colors.textSecondary} /><Text style={styles.confMetaText}>{item.location}</Text></View>
+            </View>
+            {(item.contactEmail || item.speakerEmail) && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
+                {item.contactEmail && (
+                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '10', paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }} onPress={() => Linking.openURL(`mailto:${item.contactEmail}`)}>
+                    <Ionicons name="mail" size={11} color={colors.primary} />
+                    <Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }} numberOfLines={1}>Delegates</Text>
+                  </TouchableOpacity>
+                )}
+                {item.speakerEmail && (
+                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.accent + '15', paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }} onPress={() => Linking.openURL(`mailto:${item.speakerEmail}`)}>
+                    <Ionicons name="mic" size={11} color={colors.accentLight} />
+                    <Text style={{ fontSize: 10, color: colors.accentLight, fontWeight: '600' }} numberOfLines={1}>Speakers</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+      />
+      {selectedConference && <ConferenceDetailModal conference={selectedConference} onClose={() => setSelectedConference(null)} />}
     </View>
   );
-}}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={[styles.confCard, item.passed && { borderColor: colors.borderLight, opacity: 0.75 }, item.isLive && { borderColor: '#00C853', borderWidth: 1.5, shadowColor: '#00C853', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } }]} onPress={() => setSelectedConference(item)}>
-{item.isLive && (
-<View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#00C85318', paddingHorizontal: 10, paddingVertical: 6, borderRadius: borderRadius.sm, marginBottom: spacing.sm, gap: 6 }}>
-<View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#00C853' }} />
-<Text style={{ fontSize: fontSize.xs, color: '#00C853', fontWeight: '800', letterSpacing: 1 }}>LIVE NOW</Text>
-<Text style={{ fontSize: fontSize.xs, color: colors.textSecondary, marginLeft: 'auto' }}>Happening today</Text>
-</View>
-)}
-{item.passed && (
-<View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF6B6B18', paddingHorizontal: 10, paddingVertical: 6, borderRadius: borderRadius.sm, marginBottom: spacing.sm, gap: 6 }}>
-<Ionicons name="checkmark-done-circle" size={14} color="#FF6B6B" />
-<Text style={{ fontSize: fontSize.xs, color: '#FF6B6B', fontWeight: '700' }}>Passed</Text>
-<Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginLeft: 'auto' }}>Was: {item.originalDate}</Text>
-</View>
-)}
-<View style={styles.confHeader}>
-<View style={[styles.confIcon, item.passed && { opacity: 0.5 }]}><Feather name={item.icon as any} size={22} color={item.isLive ? '#00C853' : colors.primary} /></View>
-<View style={{ flex: 1 }}><Text style={[styles.confName, item.passed && { color: colors.textMuted }]}>{item.name}</Text><Text style={styles.confFocus}>{item.focus} • {item.country}</Text></View>
-<View style={styles.confAttendeeBadge}><Ionicons name="people" size={10} color={colors.primary} /><Text style={styles.confAttendeeText}>{item.attendees}</Text></View>
-</View>
-<Text style={styles.confDesc} numberOfLines={2}>{item.description}</Text>
-<View style={styles.confFooter}>
-<View style={[styles.confDateBadge, item.passed && { backgroundColor: '#FF6B6B18' }, item.isLive && { backgroundColor: '#00C85320' }]}><Ionicons name={item.passed ? 'time' : item.isLive ? 'radio' : 'calendar'} size={12} color={item.passed ? '#FF6B6B' : item.isLive ? '#00C853' : colors.primary} /><Text style={[styles.confDateText, item.passed && { color: '#FF6B6B' }, item.isLive && { color: '#00C853', fontWeight: '700' }]}>{item.passed ? 'TBA 2027' : item.date}</Text></View>
-<View style={styles.confMetaItem}><Ionicons name="location" size={12} color={colors.textSecondary} /><Text style={styles.confMetaText}>{item.location}</Text></View>
-</View>
-</TouchableOpacity>
-)}
-/>
-{selectedConference && <ConferenceDetailModal conference={selectedConference} onClose={() => setSelectedConference(null)} />}
-</View>
-);
 }
 
 // ==================== PODCASTS VIEW ====================
@@ -793,11 +1082,11 @@ renderItem={({ item }: { item: any }) => (
 
 // ==================== MAIN COMPONENT ====================
 const TAB_CONFIG: { key: HubTab; label: string; icon: string; count: number }[] = [
+{ key: 'conferences', label: 'Conferences', icon: 'calendar', count: CONFERENCES.length },
 { key: 'funders', label: 'Funders', icon: 'cash', count: AFRICAN_VCS.length },
 { key: 'tools', label: 'AI Tools', icon: 'construct', count: AI_TOOLS.length },
 { key: 'guides', label: 'Guides', icon: 'book', count: AI_GUIDES.length },
 { key: 'cases', label: 'Cases', icon: 'briefcase', count: CASE_STUDIES.length },
-{ key: 'conferences', label: 'Conferences', icon: 'calendar', count: CONFERENCES.length },
 { key: 'podcasts', label: 'Podcasts', icon: 'mic', count: SA_PODCASTS.length },
 { key: 'news', label: 'News', icon: 'newspaper', count: AI_NEWS.length },
 { key: 'setas', label: 'SETAs', icon: 'school', count: SETAS.length },
@@ -805,177 +1094,187 @@ const TAB_CONFIG: { key: HubTab; label: string; icon: string; count: number }[] 
 ];
 
 export default function AIHubScreen() {
-const route = useRoute();
-const initialTab = (route.params as any)?.tab as HubTab | undefined;
-const [activeTab, setActiveTab] = useState<HubTab>(initialTab || 'funders');
+  const navigation = useNavigation();
+  const route = useRoute();
+  const [activeTab, setActiveTab] = useState<HubTab>(
+    ((route.params as any)?.tab as HubTab) || 'conferences'
+  );
 
-useEffect(() => {
-  if (initialTab) {
-    setActiveTab(initialTab);
-  }
-}, [initialTab]);
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      const tab = (route.params as any)?.tab as HubTab | undefined;
+      if (tab) {
+        setActiveTab(tab);
+      }
+    });
+    return unsubscribe;
+  }, [navigation, route]);
 
-return (
-<View style={styles.container}>
-<SafeAreaView style={styles.safeArea}>
-<View style={styles.header}>
-<Text style={styles.headerTitle}>AI Hub</Text>
-<Text style={styles.headerSubtitle}>Resources for African Entrepreneurs</Text>
-</View>
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
-{TAB_CONFIG.map(tab => (
-<TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
-<Ionicons name={tab.icon as any} size={14} color={activeTab === tab.key ? colors.black : colors.textSecondary} />
-<Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
-<View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}><Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>{tab.count}</Text></View>
-</TouchableOpacity>
-))}
-</ScrollView>
-{activeTab === 'funders' && <FundersView />}
-{activeTab === 'tools' && <ToolsView />}
-{activeTab === 'guides' && <GuidesView />}
-{activeTab === 'cases' && <CaseStudiesView />}
-{activeTab === 'conferences' && <ConferencesView />}
-{activeTab === 'podcasts' && <PodcastsView />}
-{activeTab === 'news' && <NewsView />}
-{activeTab === 'setas' && <SETAsView />}
-{activeTab === 'stateAgencies' && <StateAgenciesView />}
-</SafeAreaView>
-</View>
-);
+  return (
+    <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
+            <Ionicons name="arrow-back" size={22} color={colors.primary} />
+            <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginLeft: 4 }}>Home</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>AI Hub</Text>
+          <Text style={styles.headerSubtitle}>Resources for African Entrepreneurs</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
+          {TAB_CONFIG.map(tab => (
+            <TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
+              <Ionicons name={tab.icon as any} size={14} color={activeTab === tab.key ? colors.black : colors.textSecondary} />
+              <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
+              <View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}><Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>{tab.count}</Text></View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        {activeTab === 'funders' && <FundersView />}
+        {activeTab === 'tools' && <ToolsView />}
+        {activeTab === 'guides' && <GuidesView />}
+        {activeTab === 'cases' && <CaseStudiesView />}
+        {activeTab === 'conferences' && <ConferencesView />}
+        {activeTab === 'podcasts' && <PodcastsView />}
+        {activeTab === 'news' && <NewsView />}
+        {activeTab === 'setas' && <SETAsView />}
+        {activeTab === 'stateAgencies' && <StateAgenciesView />}
+      </SafeAreaView>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-container: { flex: 1, backgroundColor: colors.background },
-safeArea: { flex: 1 },
-header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
-headerTitle: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.text },
-headerSubtitle: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginTop: 2 },
-tabScroll: { maxHeight: 52, marginTop: spacing.sm, marginBottom: spacing.xs },
-tabContent: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: 'center' },
-tabButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-tabButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-tabLabel: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '600' },
-tabLabelActive: { color: colors.black },
-tabCount: { backgroundColor: colors.surfaceLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 },
-tabCountActive: { backgroundColor: colors.black + '20' },
-tabCountText: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
-tabCountTextActive: { color: colors.black },
-searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
-searchInput: { flex: 1, fontSize: fontSize.sm, color: colors.text },
-filterScroll: { height: 44, marginTop: spacing.sm, marginBottom: spacing.xs },
-filterContent: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: 'center' },
-filterChip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
-filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-filterChipText: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '600' },
-filterChipTextActive: { color: colors.black },
-resultCount: { fontSize: fontSize.xs, color: colors.textMuted, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-funderCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.lg, marginBottom: spacing.sm, borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
-funderRank: { width: 32, height: 32, borderRadius: borderRadius.sm, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center' },
-funderRankText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.primary },
-funderInfo: { flex: 1 },
-funderName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-funderFirm: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '500' },
-funderMeta: { flexDirection: 'row', gap: spacing.sm, marginTop: 4 },
-funderTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
-funderTagText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '500' },
-modalContainer: { flex: 1, backgroundColor: colors.background },
-modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
-modalHeaderTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
-modalBody: { flex: 1, paddingHorizontal: spacing.lg },
-funderDetailTop: { alignItems: 'center', paddingVertical: spacing.xl },
-funderAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
-funderAvatarText: { fontSize: 28, fontWeight: '800', color: colors.black },
-funderDetailName: { fontSize: fontSize.xl, fontWeight: '800', color: colors.text, marginTop: spacing.md, textAlign: 'center' },
-funderDetailFirm: { fontSize: fontSize.md, color: colors.primary, fontWeight: '600', marginTop: 4, textAlign: 'center' },
-detailSection: { marginTop: spacing.lg },
-detailLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-detailText: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 },
-stagePill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primary + '15', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, alignSelf: 'flex-start' },
-stagePillText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
-contactRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
-contactText: { fontSize: fontSize.sm, color: colors.primary },
-visitButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.xl },
-visitButtonText: { fontSize: fontSize.md, fontWeight: '700', color: colors.black },
-toolCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-toolHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-toolIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
-toolName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-toolCategory: { fontSize: fontSize.xs, color: colors.textSecondary },
-toolDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.sm },
-priceBadge: { backgroundColor: colors.success + '20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
-priceText: { fontSize: fontSize.xs, color: colors.success, fontWeight: '600' },
-featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-featureChip: { backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
-featureChipText: { fontSize: fontSize.xs, color: colors.textSecondary },
-featureList: { gap: spacing.sm },
-featureItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-featureItemText: { fontSize: fontSize.sm, color: colors.textSecondary, flex: 1 },
-guideCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
-guideIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
-guideInfo: { flex: 1 },
-guideBadges: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
-levelBadge: { backgroundColor: colors.accent + '30', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.sm },
-levelBadgeText: { fontSize: 10, color: colors.accentLight, fontWeight: '700', textTransform: 'uppercase' },
-guideDuration: { fontSize: fontSize.xs, color: colors.textMuted },
-guideTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-guideSummary: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2, lineHeight: 18 },
-guideSection: { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
-guideSectionHeading: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
-guideSectionContent: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 },
-caseCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-caseTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-caseIndustryBadge: { backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
-caseIndustryText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
-caseYear: { fontSize: fontSize.xs, color: colors.textMuted },
-caseTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-caseCompany: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '500', marginTop: 2 },
-caseChallenge: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 20 },
-caseResults: { marginTop: spacing.sm, gap: 4 },
-caseResultItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-caseResultText: { fontSize: fontSize.sm, color: colors.textSecondary },
-quoteBox: { backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, marginTop: spacing.lg, borderLeftWidth: 3, borderLeftColor: colors.primary },
-quoteText: { fontSize: fontSize.sm, color: colors.text, fontStyle: 'italic', lineHeight: 22 },
-quoteAuthor: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600', marginTop: spacing.sm },
-confCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-confHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-confIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
-confName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-confFocus: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '500' },
-confDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.sm },
-confFooter: { flexDirection: 'row', gap: spacing.md },
-confMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-confMetaText: { fontSize: fontSize.xs, color: colors.textSecondary },
-confAttendeeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
-confAttendeeText: { fontSize: 10, color: colors.primary, fontWeight: '600' },
-confFilterSection: { height: 38, marginTop: spacing.xs },
-confFilterChips: { paddingHorizontal: spacing.lg, gap: spacing.xs },
-confChip: { paddingHorizontal: spacing.sm + 2, paddingVertical: 6, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
-confChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-confChipText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '500' },
-confChipTextActive: { color: colors.black, fontWeight: '600' },
-confDateBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
-confDateText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
-confSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm, paddingVertical: spacing.sm },
-confSectionTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, flex: 1 },
-confSectionCount: { backgroundColor: colors.primary + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.sm },
-confSectionCountText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '700' },
-podcastCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-podcastHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 6 },
-podcastIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-podcastName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-podcastHost: { fontSize: fontSize.xs, color: colors.textSecondary },
-podcastCatBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, marginLeft: 'auto' },
-podcastDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 18, marginBottom: spacing.sm },
-podcastFocusTag: { backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm, alignSelf: 'flex-start' },
-podcastFocusText: { fontSize: fontSize.xs, color: colors.textSecondary },
-podcastFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
-podcastContactRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-podcastContactChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm },
-podcastContactText: { fontSize: 11, color: colors.primary, maxWidth: 150 },
-podcastCategoryLabel: { backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
-podcastCategoryText: { fontSize: 10, color: colors.textSecondary },
-funderIcon: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.background },
+  safeArea: { flex: 1 },
+  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  headerTitle: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.text },
+  headerSubtitle: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginTop: 2 },
+  tabScroll: { maxHeight: 60, marginTop: spacing.sm, marginBottom: spacing.xs, flexGrow: 0 },
+  tabContent: { paddingHorizontal: spacing.lg, paddingVertical: 4, paddingRight: spacing.xl, gap: spacing.sm, alignItems: 'center' },
+  tabButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  tabButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tabLabel: { fontSize: fontSize.xs, lineHeight: 16, color: colors.textSecondary, fontWeight: '600' },
+  tabLabelActive: { color: colors.black },
+  tabCount: { backgroundColor: colors.surfaceLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 },
+  tabCountActive: { backgroundColor: colors.black + '20' },
+  tabCountText: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
+  tabCountTextActive: { color: colors.black },
+  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: borderRadius.md, minHeight: 48, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  searchInput: { flex: 1, fontSize: fontSize.sm, color: colors.text },
+  filterScroll: { minHeight: 48, marginTop: spacing.sm, marginBottom: spacing.xs, flexGrow: 0 },
+  filterContent: { paddingHorizontal: spacing.lg, paddingVertical: 2, paddingRight: spacing.xl, gap: spacing.sm, alignItems: 'center' },
+  filterChip: { minHeight: 38, justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
+  filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  filterChipText: { fontSize: fontSize.sm, lineHeight: 18, color: colors.textSecondary, fontWeight: '600' },
+  filterChipTextActive: { color: colors.black },
+  resultCount: { fontSize: fontSize.xs, color: colors.textMuted, paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.sm },
+  funderCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.lg, marginBottom: spacing.sm, borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  funderRank: { width: 32, height: 32, borderRadius: borderRadius.sm, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center' },
+  funderRankText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.primary },
+  funderInfo: { flex: 1 },
+  funderName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+  funderFirm: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '500' },
+  funderMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 4 },
+  funderTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  funderTagText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '500' },
+  modalContainer: { flex: 1, backgroundColor: colors.background },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  modalHeaderTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
+  modalBody: { flex: 1, paddingHorizontal: spacing.lg },
+  funderDetailTop: { alignItems: 'center', paddingVertical: spacing.xl },
+  funderAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+  funderAvatarText: { fontSize: 28, fontWeight: '800', color: colors.black },
+  funderDetailName: { fontSize: fontSize.xl, fontWeight: '800', color: colors.text, marginTop: spacing.md, textAlign: 'center' },
+  funderDetailFirm: { fontSize: fontSize.md, color: colors.primary, fontWeight: '600', marginTop: 4, textAlign: 'center' },
+  detailSection: { marginTop: spacing.lg },
+  detailLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  detailText: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 },
+  stagePill: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primary + '15', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md, alignSelf: 'flex-start' },
+  stagePillText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
+  contactText: { fontSize: fontSize.sm, color: colors.primary },
+  visitButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.xl },
+  visitButtonText: { fontSize: fontSize.md, fontWeight: '700', color: colors.black },
+  toolCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  toolHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  toolIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
+  toolName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+  toolCategory: { fontSize: fontSize.xs, color: colors.textSecondary },
+  toolDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.sm },
+  priceBadge: { backgroundColor: colors.success + '20', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  priceText: { fontSize: fontSize.xs, color: colors.success, fontWeight: '600' },
+  featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  featureChip: { backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  featureChipText: { fontSize: fontSize.xs, color: colors.textSecondary },
+  featureList: { gap: spacing.sm },
+  featureItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  featureItemText: { fontSize: fontSize.sm, color: colors.textSecondary, flex: 1 },
+  guideCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  guideIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
+  guideInfo: { flex: 1 },
+  guideBadges: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
+  levelBadge: { backgroundColor: colors.accent + '30', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.sm },
+  levelBadgeText: { fontSize: 10, color: colors.accentLight, fontWeight: '700', textTransform: 'uppercase' },
+  guideDuration: { fontSize: fontSize.xs, color: colors.textMuted },
+  guideTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+  guideSummary: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2, lineHeight: 18 },
+  guideSection: { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  guideSectionHeading: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
+  guideSectionContent: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 },
+  caseCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  caseTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  caseIndustryBadge: { backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  caseIndustryText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
+  caseYear: { fontSize: fontSize.xs, color: colors.textMuted },
+  caseTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+  caseCompany: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '500', marginTop: 2 },
+  caseChallenge: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 20 },
+  caseResults: { marginTop: spacing.sm, gap: 4 },
+  caseResultItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  caseResultText: { fontSize: fontSize.sm, color: colors.textSecondary },
+  quoteBox: { backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, marginTop: spacing.lg, borderLeftWidth: 3, borderLeftColor: colors.primary },
+  quoteText: { fontSize: fontSize.sm, color: colors.text, fontStyle: 'italic', lineHeight: 22 },
+  quoteAuthor: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600', marginTop: spacing.sm },
+  confCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  confHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  confIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
+  confName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+  confFocus: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '500' },
+  confDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.sm },
+  confFooter: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, rowGap: 6 },
+  confMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  confMetaText: { fontSize: fontSize.xs, color: colors.textSecondary },
+  confAttendeeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
+  confAttendeeText: { fontSize: 10, color: colors.primary, fontWeight: '600' },
+  confFilterSection: { minHeight: 42, marginTop: spacing.xs, flexGrow: 0 },
+  confFilterChips: { paddingHorizontal: spacing.lg, paddingVertical: 2, paddingRight: spacing.xl, gap: spacing.xs, alignItems: 'center' },
+  confChip: { minHeight: 34, justifyContent: 'center', paddingHorizontal: spacing.sm + 2, paddingVertical: 6, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
+  confChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  confChipText: { fontSize: fontSize.xs, lineHeight: 16, color: colors.textSecondary, fontWeight: '500' },
+  confChipTextActive: { color: colors.black, fontWeight: '600' },
+  confDateBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  confDateText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
+  confSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm, paddingVertical: spacing.sm },
+  confSectionTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, flex: 1 },
+  confSectionCount: { backgroundColor: colors.primary + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.sm },
+  confSectionCountText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '700' },
+  podcastCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  podcastHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 6 },
+  podcastIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  podcastName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
+  podcastHost: { fontSize: fontSize.xs, color: colors.textSecondary },
+  podcastCatBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, marginLeft: 'auto' },
+  podcastDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 18, marginBottom: spacing.sm },
+  podcastFocusTag: { backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm, alignSelf: 'flex-start' },
+  podcastFocusText: { fontSize: fontSize.xs, color: colors.textSecondary },
+  podcastFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  podcastContactRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  podcastContactChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm },
+  podcastContactText: { fontSize: 11, color: colors.primary, maxWidth: 150 },
+  podcastCategoryLabel: { backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
+  podcastCategoryText: { fontSize: 10, color: colors.textSecondary },
+  funderIcon: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
 });
 
 const cdStyles = StyleSheet.create({

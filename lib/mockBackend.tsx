@@ -1,5 +1,11 @@
 import React, { ReactNode, useSyncExternalStore } from 'react';
 import { useMutation as useConvexMutation, useQuery as useConvexQuery } from 'convex/react';
+import {
+  useAuthActions as useConvexAuthActions,
+  Authenticated as ConvexAuthenticated,
+  Unauthenticated as ConvexUnauthenticated,
+  AuthLoading as ConvexAuthLoading,
+} from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { USE_LIVE_BACKEND } from './backendConfig';
 
@@ -858,19 +864,33 @@ export function useMutation(reference: any) {
 }
 
 export function useAuthActions() {
+  if (USE_LIVE_BACKEND) {
+    return useConvexAuthActions();
+  }
+
   return {
     signIn: async () => null,
+    signOut: async () => undefined,
   };
 }
 
 export function Authenticated({ children }: { children: ReactNode }) {
+  if (USE_LIVE_BACKEND) {
+    return <ConvexAuthenticated>{children}</ConvexAuthenticated>;
+  }
   return <>{children}</>;
 }
 
-export function Unauthenticated() {
-  return null;
+export function Unauthenticated({ children }: { children?: ReactNode }) {
+  if (USE_LIVE_BACKEND) {
+    return <ConvexUnauthenticated>{children}</ConvexUnauthenticated>;
+  }
+  return <>{children ?? null}</>;
 }
 
-export function AuthLoading() {
-  return null;
+export function AuthLoading({ children }: { children?: ReactNode }) {
+  if (USE_LIVE_BACKEND) {
+    return <ConvexAuthLoading>{children}</ConvexAuthLoading>;
+  }
+  return <>{children ?? null}</>;
 }

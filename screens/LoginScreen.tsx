@@ -228,7 +228,7 @@ Collaborate. Innovate. Transform.
 <View style={styles.authContainer}>
 <TouchableOpacity
 style={styles.googleButton}
-onPress={() => a0.auth.signInWithGoogle()}
+onPress={async () => { try { await a0.auth.signInWithGoogle(); } catch (err: any) { Alert.alert('Sign In Failed', err?.message || 'Could not sign in with Google. Please try again.'); } }}
 activeOpacity={0.8}
 >
 <Ionicons name="logo-google" size={20} color="#000" />
@@ -238,7 +238,7 @@ activeOpacity={0.8}
 {Platform.OS === 'ios' && (
 <TouchableOpacity
 style={styles.appleButton}
-onPress={() => a0.auth.signInWithApple()}
+onPress={async () => { try { await a0.auth.signInWithApple(); } catch (err: any) { Alert.alert('Sign In Failed', err?.message || 'Could not sign in with Apple. Please try again.'); } }}
 activeOpacity={0.8}
 >
 <Ionicons name="logo-apple" size={22} color="#FFF" />
@@ -533,3 +533,5 @@ color: colors.primary,
 fontWeight: '700',
 },
 });
+
+// ... existing code ...
