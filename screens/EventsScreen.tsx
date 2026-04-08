@@ -23,14 +23,19 @@ const EVENT_CATEGORIES = [
   { id: 'finance_tax', label: 'Finance & Tax', icon: 'calculator' },
 ];
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const COMPACT_FILTER_BREAKPOINT = 640;
 
 export default function EventsScreen() {
   const { isDemo, exitDemo } = useDemo();
   const [selectedCategory, setSelectedCategory] = useState('dinner_tour');
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const events = useQuery(api.events.listEvents, { category: selectedCategory });
   const rsvpEvent = useMutation(api.events.rsvpEvent);
+  const isCompactScreen = SCREEN_WIDTH < COMPACT_FILTER_BREAKPOINT;
+  const activeCategory =
+    EVENT_CATEGORIES.find((category) => category.id === selectedCategory) ?? EVENT_CATEGORIES[0];
 
   const handleRsvp = async (eventId: any) => {
     if (isDemo) {
@@ -68,6 +73,16 @@ export default function EventsScreen() {
       minute: '2-digit',
     });
 
+  const handleListScroll = (event: any) => {
+    if (!isCompactScreen) return;
+    const offsetY = event.nativeEvent.contentOffset.y;
+    if (offsetY > 32 && !filtersCollapsed) {
+      setFiltersCollapsed(true);
+    } else if (offsetY <= 8 && filtersCollapsed) {
+      setFiltersCollapsed(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -77,39 +92,60 @@ export default function EventsScreen() {
         </View>
 
         {/* Category Tabs */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabsContainer}
-          contentContainerStyle={styles.tabsContent}
-        >
-          {EVENT_CATEGORIES.map((category) => (
+        {isCompactScreen && filtersCollapsed ? (
+          <View style={styles.compactFilterWrap}>
             <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.tab,
-                selectedCategory === category.id && styles.tabActive,
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
+              style={styles.compactFilterButton}
+              onPress={() => setFiltersCollapsed(false)}
+              activeOpacity={0.8}
             >
-              <Ionicons
-                name={category.icon as any}
-                size={16}
-                color={selectedCategory === category.id ? colors.primary : colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.tabLabel,
-                  selectedCategory === category.id && styles.tabLabelActive,
-                ]}
-              >
-                {category.label}
+              <Ionicons name={activeCategory.icon as any} size={16} color={colors.primary} />
+              <Text style={styles.compactFilterText} numberOfLines={1}>
+                {activeCategory.label}
               </Text>
+              <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tabsContainer}
+            contentContainerStyle={styles.tabsContent}
+          >
+            {EVENT_CATEGORIES.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                style={[
+                  styles.tab,
+                  selectedCategory === category.id && styles.tabActive,
+                ]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <Ionicons
+                  name={category.icon as any}
+                  size={16}
+                  color={selectedCategory === category.id ? colors.primary : colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    selectedCategory === category.id && styles.tabLabelActive,
+                  ]}
+                >
+                  {category.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.list}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
+        >
           {events?.map((event) => (
             <TouchableOpacity
               key={event._id}
@@ -406,6 +442,30 @@ const styles = StyleSheet.create({
   },
   headerTitle: { flexShrink: 1, fontSize: fontSize.xxl, fontWeight: '800', color: colors.text },
   headerCount: { fontSize: fontSize.sm, color: colors.textMuted, fontWeight: '600', flexShrink: 0 },
+  compactFilterWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  compactFilterButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  compactFilterText: {
+    maxWidth: SCREEN_WIDTH - spacing.lg * 2 - 72,
+    fontSize: fontSize.sm,
+    lineHeight: 18,
+    color: colors.text,
+    fontWeight: '600',
+  },
   tabsContainer: {
     backgroundColor: colors.background,
     flexGrow: 0,

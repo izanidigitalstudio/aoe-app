@@ -115,6 +115,7 @@ function LoadingScreen() {
 
 function LiveApp() {
   const [isDemo, setIsDemo] = useState(false);
+  const [authLoadTimedOut, setAuthLoadTimedOut] = useState(false);
   const { isLoading, isAuthenticated } = useConvexAuth();
   const { signOut } = useAuthActions();
   const ensureCurrentUser = useMutation(api.users.ensureCurrentUser);
@@ -124,6 +125,19 @@ function LiveApp() {
       ensureCurrentUser().catch(() => {});
     }
   }, [ensureCurrentUser, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setAuthLoadTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setAuthLoadTimedOut(true);
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   return (
     <DemoContext.Provider
@@ -140,7 +154,15 @@ function LiveApp() {
     >
       <SafeAreaProvider style={styles.container}>
         <NavigationContainer>
-          {isDemo ? <MainApp /> : isLoading ? <LoadingScreen /> : isAuthenticated ? <MainApp /> : <LoginScreen onDemoAccess={() => setIsDemo(true)} />}
+          {isDemo ? (
+            <MainApp />
+          ) : isLoading && !authLoadTimedOut ? (
+            <LoadingScreen />
+          ) : isAuthenticated ? (
+            <MainApp />
+          ) : (
+            <LoginScreen onDemoAccess={() => setIsDemo(true)} />
+          )}
         </NavigationContainer>
       </SafeAreaProvider>
     </DemoContext.Provider>

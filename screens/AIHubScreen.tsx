@@ -22,11 +22,36 @@ import { STATE_AGENCIES, StateAgency } from '../data/stateAgencies';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 const { width } = Dimensions.get('window');
+const COMPACT_HUB_BREAKPOINT = 640;
 
 type HubTab = 'funders' | 'tools' | 'guides' | 'cases' | 'conferences' | 'podcasts' | 'news' | 'setas' | 'stateAgencies';
+type HubContentProps = {
+  onContentScroll?: (event: any) => void;
+  compactFiltersCollapsed?: boolean;
+  isCompactScreen?: boolean;
+  onExpandFilters?: () => void;
+};
+
+function CompactFilterButton({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress?: () => void;
+}) {
+  return (
+    <View style={styles.compactFilterWrap}>
+      <TouchableOpacity style={styles.compactFilterButton} onPress={onPress} activeOpacity={0.8}>
+        <Ionicons name="options-outline" size={16} color={colors.primary} />
+        <Text style={styles.compactFilterText} numberOfLines={1}>{label}</Text>
+        <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 // ==================== FUNDERS VIEW ====================
-function FundersView() {
+function FundersView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
 const [search, setSearch] = useState('');
 const [selectedFunder, setSelectedFunder] = useState<Funder | null>(null);
 const [filterCountry, setFilterCountry] = useState('All');
@@ -43,6 +68,9 @@ return (
 <TextInput style={styles.searchInput} placeholder="Search funders, firms, or focus areas..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
 {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
 </View>
+{isCompactScreen && compactFiltersCollapsed ? (
+<CompactFilterButton label={filterCountry === 'All' ? 'All countries' : filterCountry} onPress={onExpandFilters} />
+) : (
 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
 {countries.map((c: any) => (
 <TouchableOpacity key={c} style={[styles.filterChip, filterCountry === c && styles.filterChipActive]} onPress={() => setFilterCountry(c)}>
@@ -50,11 +78,14 @@ return (
 </TouchableOpacity>
 ))}
 </ScrollView>
+)}
 <Text style={styles.resultCount}>{filtered.length} funders found</Text>
 <FlatList
 data={filtered}
 keyExtractor={(item: any, i: number) => `${item.firm}-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item, index }: { item: any; index: number }) => (
 <TouchableOpacity style={styles.funderCard} onPress={() => setSelectedFunder(item)}>
 <View style={styles.funderRank}><Text style={styles.funderRankText}>{index + 1}</Text></View>
@@ -101,13 +132,16 @@ renderItem={({ item, index }: { item: any; index: number }) => (
 }
 
 // ==================== AI TOOLS VIEW ====================
-function ToolsView() {
+function ToolsView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
 const [selectedTool, setSelectedTool] = useState<AITool | null>(null);
 const [filterCat, setFilterCat] = useState('All');
 const categories = ['All', ...Array.from(new Set(AI_TOOLS.map(t => t.category))).sort()];
 const filtered = AI_TOOLS.filter(t => filterCat === 'All' || t.category === filterCat);
 return (
 <View style={{ flex: 1 }}>
+{isCompactScreen && compactFiltersCollapsed ? (
+<CompactFilterButton label={filterCat === 'All' ? 'All AI tools' : filterCat} onPress={onExpandFilters} />
+) : (
 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
 {categories.map((c: any) => (
 <TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
@@ -115,8 +149,11 @@ return (
 </TouchableOpacity>
 ))}
 </ScrollView>
+)}
 <FlatList data={filtered} keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.toolCard} onPress={() => setSelectedTool(item)}>
 <View style={styles.toolHeader}>
@@ -158,12 +195,14 @@ renderItem={({ item }: { item: any }) => (
 }
 
 // ==================== GUIDES VIEW ====================
-function GuidesView() {
+function GuidesView({ onContentScroll }: HubContentProps) {
 const [selectedGuide, setSelectedGuide] = useState<Guide | null>(null);
 return (
 <View style={{ flex: 1 }}>
 <FlatList data={AI_GUIDES} keyExtractor={(item: any, i: number) => `guide-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.guideCard} onPress={() => setSelectedGuide(item)}>
 <View style={styles.guideIcon}><Ionicons name={item.icon as any} size={28} color={colors.primary} /></View>
@@ -198,12 +237,14 @@ renderItem={({ item }: { item: any }) => (
 }
 
 // ==================== CASE STUDIES VIEW ====================
-function CaseStudiesView() {
+function CaseStudiesView({ onContentScroll }: HubContentProps) {
 const [selectedCase, setSelectedCase] = useState<CaseStudy | null>(null);
 return (
 <View style={{ flex: 1 }}>
 <FlatList data={CASE_STUDIES} keyExtractor={(item: any, i: number) => `case-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.caseCard} onPress={() => setSelectedCase(item)}>
 <View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{item.industry}</Text></View><Text style={styles.caseYear}>{item.year}</Text></View>
@@ -770,7 +811,7 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
   );
 }
 
-function ConferencesView() {
+function ConferencesView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
   const [selectedConference, setSelectedConference] = useState<ProcessedConference | null>(null);
   const [filterFocus, setFilterFocus] = useState('All');
   const [filterCountry, setFilterCountry] = useState('All');
@@ -817,6 +858,12 @@ function ConferencesView() {
     return mf && mc && mm && ms;
   });
   const sections = groupByMonth(filtered);
+  const activeFilterCount = [
+    filterFocus !== 'All',
+    filterCountry !== 'All',
+    filterMonth !== 'All',
+    Boolean(search.trim()),
+  ].filter(Boolean).length;
   
   return (
     <View style={{ flex: 1 }}>
@@ -825,12 +872,21 @@ function ConferencesView() {
         <TextInput style={styles.searchInput} placeholder="Search conferences..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
         {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-        {focuses.map((f: any) => (<TouchableOpacity key={f} style={[styles.confChip, filterFocus === f && styles.confChipActive]} onPress={() => setFilterFocus(f)}><Text style={[styles.confChipText, filterFocus === f && styles.confChipTextActive]}>{f}</Text></TouchableOpacity>))}</ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-        {COUNTRIES.map((c: any) => (<TouchableOpacity key={c} style={[styles.confChip, filterCountry === c && styles.confChipActive]} onPress={() => setFilterCountry(c)}><Text style={[styles.confChipText, filterCountry === c && styles.confChipTextActive]}>{c}</Text></TouchableOpacity>))}</ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-        {MONTHS.map((m: any) => (<TouchableOpacity key={m} style={[styles.confChip, filterMonth === m && styles.confChipActive]} onPress={() => setFilterMonth(m)}><Text style={[styles.confChipText, filterMonth === m && styles.confChipTextActive]}>{m}</Text></TouchableOpacity>))}</ScrollView>
+      {isCompactScreen && compactFiltersCollapsed ? (
+        <CompactFilterButton
+          label={activeFilterCount > 0 ? `${activeFilterCount} filters active` : 'Conference filters'}
+          onPress={onExpandFilters}
+        />
+      ) : (
+        <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+            {focuses.map((f: any) => (<TouchableOpacity key={f} style={[styles.confChip, filterFocus === f && styles.confChipActive]} onPress={() => setFilterFocus(f)}><Text style={[styles.confChipText, filterFocus === f && styles.confChipTextActive]}>{f}</Text></TouchableOpacity>))}</ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+            {COUNTRIES.map((c: any) => (<TouchableOpacity key={c} style={[styles.confChip, filterCountry === c && styles.confChipActive]} onPress={() => setFilterCountry(c)}><Text style={[styles.confChipText, filterCountry === c && styles.confChipTextActive]}>{c}</Text></TouchableOpacity>))}</ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+            {MONTHS.map((m: any) => (<TouchableOpacity key={m} style={[styles.confChip, filterMonth === m && styles.confChipActive]} onPress={() => setFilterMonth(m)}><Text style={[styles.confChipText, filterMonth === m && styles.confChipTextActive]}>{m}</Text></TouchableOpacity>))}</ScrollView>
+        </>
+      )}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
         <Text style={[styles.resultCount, { marginBottom: 0, paddingHorizontal: 0 }]}>{filtered.length} conferences found</Text>
       </View>
@@ -838,6 +894,8 @@ function ConferencesView() {
         sections={sections}
         keyExtractor={(item: any, i: number) => `${item._id || item.name}-${i}`}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        onScroll={onContentScroll}
+        scrollEventThrottle={16}
         stickySectionHeadersEnabled={false}
         renderSectionHeader={({ section }: { section: { title: string; data: ProcessedConference[] } }) => (
           <View style={[styles.confSectionHeader]}>
@@ -883,7 +941,7 @@ function ConferencesView() {
 }
 
 // ==================== PODCASTS VIEW ====================
-function PodcastsView() {
+function PodcastsView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
 const [selectedPodcast, setSelectedPodcast] = useState<Podcast | null>(null);
 const [filterCat, setFilterCat] = useState('All');
 const [search, setSearch] = useState('');
@@ -899,6 +957,9 @@ return (
 <TextInput style={styles.searchInput} placeholder="Search podcasts..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
 {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
 </View>
+{isCompactScreen && compactFiltersCollapsed ? (
+<CompactFilterButton label={filterCat === 'All' ? 'All podcasts' : filterCat} onPress={onExpandFilters} />
+) : (
 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
 {PODCAST_CATEGORIES.map((c: any) => (
 <TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
@@ -906,9 +967,12 @@ return (
 </TouchableOpacity>
 ))}
 </ScrollView>
+)}
 <Text style={styles.resultCount}>{filtered.length} podcasts found</Text>
 <FlatList data={filtered} keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.podcastCard} onPress={() => setSelectedPodcast(item)}>
 <View style={styles.podcastHeader}>
@@ -949,11 +1013,14 @@ renderItem={({ item }: { item: any }) => (
 }
 
 // ==================== NEWS VIEW ====================
-function NewsView() {
+function NewsView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
 const [filterCat, setFilterCat] = useState('All');
 const filtered = AI_NEWS.filter(n => filterCat === 'All' || n.category === filterCat);
 return (
 <View style={{ flex: 1 }}>
+{isCompactScreen && compactFiltersCollapsed ? (
+<CompactFilterButton label={filterCat === 'All' ? 'All news' : filterCat} onPress={onExpandFilters} />
+) : (
 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
 {AI_NEWS_CATEGORIES.map((c: any) => (
 <TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
@@ -961,8 +1028,11 @@ return (
 </TouchableOpacity>
 ))}
 </ScrollView>
+)}
 <FlatList data={filtered} keyExtractor={(item: any, i: number) => `news-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.caseCard} onPress={() => Linking.openURL(item.url)}>
 <View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{item.category}</Text></View><Text style={styles.caseYear}>{item.date}</Text></View>
@@ -977,12 +1047,14 @@ renderItem={({ item }: { item: any }) => (
 }
 
 // ==================== SETAs VIEW ====================
-function SETAsView() {
+function SETAsView({ onContentScroll }: HubContentProps) {
 const [selectedSETA, setSelectedSETA] = useState<SETA | null>(null);
 return (
 <View style={{ flex: 1 }}>
 <FlatList data={SETAS} keyExtractor={(item: any, i: number) => `seta-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.toolCard} onPress={() => setSelectedSETA(item)}>
 <View style={styles.toolHeader}>
@@ -1023,7 +1095,7 @@ renderItem={({ item }: { item: any }) => (
 }
 
 // ==================== STATE AGENCIES VIEW ====================
-function StateAgenciesView() {
+function StateAgenciesView({ onContentScroll }: HubContentProps) {
 const [selectedAgency, setSelectedAgency] = useState<StateAgency | null>(null);
 const [search, setSearch] = useState('');
 const filtered = STATE_AGENCIES.filter(a => {
@@ -1039,6 +1111,8 @@ return (
 <Text style={styles.resultCount}>{filtered.length} agencies found</Text>
 <FlatList data={filtered} keyExtractor={(item: any, i: number) => `agency-${i}`}
 contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+onScroll={onContentScroll}
+scrollEventThrottle={16}
 renderItem={({ item }: { item: any }) => (
 <TouchableOpacity style={styles.toolCard} onPress={() => setSelectedAgency(item)}>
 <View style={styles.toolHeader}>
@@ -1099,16 +1173,30 @@ export default function AIHubScreen() {
   const [activeTab, setActiveTab] = useState<HubTab>(
     ((route.params as any)?.tab as HubTab) || 'conferences'
   );
+  const [tabsCollapsed, setTabsCollapsed] = useState(false);
+  const isCompactScreen = width < COMPACT_HUB_BREAKPOINT;
+  const activeTabConfig = TAB_CONFIG.find((tab) => tab.key === activeTab) ?? TAB_CONFIG[0];
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       const tab = (route.params as any)?.tab as HubTab | undefined;
       if (tab) {
         setActiveTab(tab);
+        setTabsCollapsed(false);
       }
     });
     return unsubscribe;
   }, [navigation, route]);
+
+  const handleContentScroll = useCallback((event: any) => {
+    if (!isCompactScreen) return;
+    const offsetY = event.nativeEvent.contentOffset.y;
+    if (offsetY > 32 && !tabsCollapsed) {
+      setTabsCollapsed(true);
+    } else if (offsetY <= 8 && tabsCollapsed) {
+      setTabsCollapsed(false);
+    }
+  }, [isCompactScreen, tabsCollapsed]);
 
   return (
     <View style={styles.container}>
@@ -1121,24 +1209,44 @@ export default function AIHubScreen() {
           <Text style={styles.headerTitle}>AI Hub</Text>
           <Text style={styles.headerSubtitle}>Resources for African Entrepreneurs</Text>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
-          {TAB_CONFIG.map(tab => (
-            <TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
-              <Ionicons name={tab.icon as any} size={14} color={activeTab === tab.key ? colors.black : colors.textSecondary} />
-              <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
-              <View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}><Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>{tab.count}</Text></View>
+        {isCompactScreen && tabsCollapsed ? (
+          <View style={styles.compactTabWrap}>
+            <TouchableOpacity
+              style={styles.compactTabButton}
+              onPress={() => setTabsCollapsed(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={activeTabConfig.icon as any} size={16} color={colors.primary} />
+              <Text style={styles.compactTabText} numberOfLines={1}>{activeTabConfig.label}</Text>
+              <View style={styles.compactTabCount}>
+                <Text style={styles.compactTabCountText}>{activeTabConfig.count}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-        {activeTab === 'funders' && <FundersView />}
-        {activeTab === 'tools' && <ToolsView />}
-        {activeTab === 'guides' && <GuidesView />}
-        {activeTab === 'cases' && <CaseStudiesView />}
-        {activeTab === 'conferences' && <ConferencesView />}
-        {activeTab === 'podcasts' && <PodcastsView />}
-        {activeTab === 'news' && <NewsView />}
-        {activeTab === 'setas' && <SETAsView />}
-        {activeTab === 'stateAgencies' && <StateAgenciesView />}
+          </View>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
+            {TAB_CONFIG.map(tab => (
+              <TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => {
+                setActiveTab(tab.key);
+                setTabsCollapsed(false);
+              }}>
+                <Ionicons name={tab.icon as any} size={14} color={activeTab === tab.key ? colors.black : colors.textSecondary} />
+                <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
+                <View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}><Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>{tab.count}</Text></View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        {activeTab === 'funders' && <FundersView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
+        {activeTab === 'tools' && <ToolsView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
+        {activeTab === 'guides' && <GuidesView onContentScroll={handleContentScroll} />}
+        {activeTab === 'cases' && <CaseStudiesView onContentScroll={handleContentScroll} />}
+        {activeTab === 'conferences' && <ConferencesView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
+        {activeTab === 'podcasts' && <PodcastsView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
+        {activeTab === 'news' && <NewsView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
+        {activeTab === 'setas' && <SETAsView onContentScroll={handleContentScroll} />}
+        {activeTab === 'stateAgencies' && <StateAgenciesView onContentScroll={handleContentScroll} />}
       </SafeAreaView>
     </View>
   );
@@ -1150,6 +1258,14 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
   headerTitle: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.text },
   headerSubtitle: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginTop: 2 },
+  compactFilterWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  compactFilterButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  compactFilterText: { maxWidth: width - spacing.lg * 2 - 58, fontSize: fontSize.sm, lineHeight: 18, color: colors.text, fontWeight: '600' },
+  compactTabWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  compactTabButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  compactTabText: { maxWidth: width - spacing.lg * 2 - 106, fontSize: fontSize.sm, lineHeight: 18, color: colors.text, fontWeight: '600' },
+  compactTabCount: { backgroundColor: colors.surfaceLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 },
+  compactTabCountText: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
   tabScroll: { maxHeight: 60, marginTop: spacing.sm, marginBottom: spacing.xs, flexGrow: 0 },
   tabContent: { paddingHorizontal: spacing.lg, paddingVertical: 4, paddingRight: spacing.xl, gap: spacing.sm, alignItems: 'center' },
   tabButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
