@@ -14,7 +14,7 @@ Platform,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { api } from '../lib/convexApi';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import { useDemo } from '../lib/DemoContext';
 

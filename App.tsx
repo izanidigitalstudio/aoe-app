@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ConvexReactClient, useConvexAuth, useMutation } from 'convex/react';
+import { Authenticated, ConvexReactClient, Unauthenticated, AuthLoading } from 'convex/react';
 import { ConvexAuthProvider } from '@convex-dev/auth/react';
 import { Ionicons } from '@expo/vector-icons';
 import HomeScreen from './screens/HomeScreen';
@@ -15,14 +15,14 @@ import ProfileScreen from './screens/ProfileScreen';
 import AIHubScreen from './screens/AIHubScreen';
 import LoginScreen from './screens/LoginScreen';
 import { DemoContext } from './lib/DemoContext';
-import { CONVEX_URL, USE_LIVE_BACKEND } from './lib/backendConfig';
-import { useAuthActions } from './lib/mockBackend';
 import { colors } from './lib/theme';
-import { api } from './convex/_generated/api';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
-const convexClient = USE_LIVE_BACKEND ? new ConvexReactClient(CONVEX_URL!) : null;
+const DEFAULT_CONVEX_URL = 'https://woozy-mockingbird-215.convex.cloud';
+const convexClient = new ConvexReactClient(
+  process.env.EXPO_PUBLIC_CONVEX_URL ?? DEFAULT_CONVEX_URL
+);
 
 const TAB_ICONS: Record<string, { focused: string; unfocused: string }> = {
   HomeTab: { focused: 'home', unfocused: 'home-outline' },
@@ -75,32 +75,6 @@ function MainApp() {
   );
 }
 
-class RootErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error: Error | null }
-> {
-  state = { error: null };
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  render() {
-    if (this.state.error) {
-      return (
-        <SafeAreaProvider style={styles.container}>
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorTitle}>App Error</Text>
-            <Text style={styles.errorText}>{this.state.error.message}</Text>
-          </View>
-        </SafeAreaProvider>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
 function LoadingScreen() {
   return (
     <View style={styles.loading}>
@@ -113,106 +87,36 @@ function LoadingScreen() {
   );
 }
 
-function LiveApp() {
-  const [isDemo, setIsDemo] = useState(false);
-  const [authLoadTimedOut, setAuthLoadTimedOut] = useState(false);
-  const { isLoading, isAuthenticated } = useConvexAuth();
-  const { signOut } = useAuthActions();
-  const ensureCurrentUser = useMutation(api.users.ensureCurrentUser);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      ensureCurrentUser().catch(() => {});
-    }
-  }, [ensureCurrentUser, isAuthenticated]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      setAuthLoadTimedOut(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setAuthLoadTimedOut(true);
-    }, 4000);
-
-    return () => clearTimeout(timer);
-  }, [isLoading]);
-
-  return (
-    <DemoContext.Provider
-      value={{
-        isDemo,
-        exitDemo: () => setIsDemo(false),
-        enterDemo: () => setIsDemo(true),
-        enterAuth: () => setIsDemo(false),
-        signOut: async () => {
-          setIsDemo(false);
-          await signOut().catch(() => {});
-        },
-      }}
-    >
-      <SafeAreaProvider style={styles.container}>
-        <NavigationContainer>
-          {isDemo ? (
-            <MainApp />
-          ) : isLoading && !authLoadTimedOut ? (
-            <LoadingScreen />
-          ) : isAuthenticated ? (
-            <MainApp />
-          ) : (
-            <LoginScreen onDemoAccess={() => setIsDemo(true)} />
-          )}
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </DemoContext.Provider>
-  );
-}
-
-function LocalApp() {
-  const [mode, setMode] = useState<'demo' | 'login' | 'auth'>('login');
-  const isDemo = mode === 'demo';
-
-  return (
-    <DemoContext.Provider
-      value={{
-        isDemo,
-        exitDemo: () => setMode('login'),
-        enterDemo: () => setMode('demo'),
-        enterAuth: () => setMode('auth'),
-        signOut: async () => setMode('login'),
-      }}
-    >
-      <SafeAreaProvider style={styles.container}>
-        <NavigationContainer>
-          {mode === 'login' ? (
-            <LoginScreen
-              onDemoAccess={() => setMode('demo')}
-              onAuthenticated={() => setMode('auth')}
-            />
-          ) : (
-            <MainApp />
-          )}
-        </NavigationContainer>
-      </SafeAreaProvider>
-    </DemoContext.Provider>
-  );
-}
-
 export default function App() {
-  const app = (
-    <RootErrorBoundary>
-      {convexClient ? (
-        <ConvexAuthProvider client={convexClient}>
-          <LiveApp />
-        </ConvexAuthProvider>
-      ) : (
-        <LocalApp />
-      )}
-    </RootErrorBoundary>
-  );
+  const [isDemo, setIsDemo] = useState(false);
 
-  return app;
+  return (
+    <ConvexAuthProvider client={convexClient}>
+      <DemoContext.Provider value={{ isDemo, exitDemo: () => setIsDemo(false) }}>
+        <SafeAreaProvider style={styles.container}>
+          <NavigationContainer>
+            {isDemo ? (
+              <MainApp />
+            ) : (
+              <>
+                <AuthLoading>
+                  <LoadingScreen />
+                </AuthLoading>
+
+                <Unauthenticated>
+                  <LoginScreen onDemoAccess={() => setIsDemo(true)} />
+                </Unauthenticated>
+
+                <Authenticated>
+                  <MainApp />
+                </Authenticated>
+              </>
+            )}
+          </NavigationContainer>
+        </SafeAreaProvider>
+      </DemoContext.Provider>
+    </ConvexAuthProvider>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -243,22 +147,5 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 13,
     marginTop: 12,
-  },
-  errorContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: 24,
-    justifyContent: 'center',
-  },
-  errorTitle: {
-    color: colors.text,
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  errorText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
   },
 });

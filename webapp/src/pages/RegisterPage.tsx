@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useMutation } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import {
   ArrowRight, ArrowLeft, CheckCircle2, Users, Building2,
   Briefcase, Lightbulb, TrendingUp, User, ChevronRight,

@@ -7,6 +7,7 @@ export default defineSchema({
 
 users: defineTable({
 name: v.optional(v.string()),
+surname: v.optional(v.string()),
 image: v.optional(v.string()),
 email: v.optional(v.string()),
 emailVerificationTime: v.optional(v.number()),
@@ -30,7 +31,9 @@ currentProjects: v.optional(v.string()),
 futureProjects: v.optional(v.string()),
 contactEmail: v.optional(v.string()),
 contactPhone: v.optional(v.string()),
+mobileNumber: v.optional(v.string()),
 physicalAddress: v.optional(v.string()),
+province: v.optional(v.string()),
 memberType: v.optional(v.string()), // "platinum_network", "esd_corporate", "business_community", "entrepreneurs", "short_term_funders"
 isDemo: v.optional(v.boolean()),
 isAdmin: v.optional(v.boolean()),
@@ -246,6 +249,12 @@ conferences: defineTable({
   icon: v.string(),
   contactEmail: v.optional(v.string()),
   speakerEmail: v.optional(v.string()),
+  speakerContact: v.optional(v.string()),
+  isPublished: v.optional(v.boolean()),
+  isArchived: v.optional(v.boolean()),
+  publishedAt: v.optional(v.number()),
+  updatedAt: v.optional(v.number()),
+  updatedBy: v.optional(v.id("users")),
   delegateInfo: v.optional(v.object({
     delegateFee: v.optional(v.string()),
     earlyBirdDeadline: v.optional(v.string()),
@@ -254,5 +263,16 @@ conferences: defineTable({
   })),
 }).index("by_country", ["country"])
   .index("by_focus", ["focus"])
-  .index("by_date", ["date"]),
+  .index("by_date", ["date"])
+  .index("by_isPublished", ["isPublished"])
+  .index("by_isArchived", ["isArchived"]),
+
+// Bulk SMS logs
+bulkSmsLogs: defineTable({
+  message: v.string(),
+  recipientCount: v.number(),
+  targetType: v.string(), // "category", "group", "individual"
+  targetLabel: v.string(), // e.g. "AOE Network", "FinTech", "John Doe, Jane Smith"
+  sentBy: v.optional(v.string()),
+}),
 });

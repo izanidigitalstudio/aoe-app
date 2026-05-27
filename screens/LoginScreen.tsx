@@ -15,15 +15,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { a0 } from '../lib/a0';
-import { useAuthActions } from '../lib/mockBackend';
+import { useAuthActions } from '@convex-dev/auth/react';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 
 type Props = {
 onDemoAccess?: () => void;
-onAuthenticated?: () => void;
 };
 
-export default function LoginScreen({ onDemoAccess, onAuthenticated }: Props) {
+export default function LoginScreen({ onDemoAccess }: Props) {
 const { signIn } = useAuthActions();
 const [mode, setMode] = useState<'main' | 'email'>('main');
 const [flow, setFlow] = useState<'signIn' | 'signUp'>('signIn');
@@ -49,7 +48,6 @@ password,
 name: flow === 'signUp' ? name.trim() : undefined,
 flow,
 });
-onAuthenticated?.();
 } catch (err: any) {
 const msg = err?.message || 'Something went wrong. Please try again.';
 Alert.alert(

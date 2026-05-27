@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import {
   View,
   Text,
@@ -14,16 +14,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { api } from '../lib/convexApi';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
-import { USE_LIVE_BACKEND } from '../lib/backendConfig';
 import { useDemo } from '../lib/DemoContext';
 import { AFRICAN_VCS } from '../data/africanVCs';
 import { AI_TOOLS } from '../data/aiTools';
 import { AI_GUIDES } from '../data/aiGuides';
 import { CASE_STUDIES } from '../data/caseStudies';
 import { SA_PODCASTS } from '../data/podcasts';
-import InviteScreen from './InviteScreen';
+const InviteScreen = lazy(() => import('./InviteScreen'));
 
 const BOOK_COVER_URL = 'https://nabdgzjpwhkjfimljnql.supabase.co/storage/v1/object/public/project_assets/55afaa5e-77cb-4947-935d-cedba8dbe438/assets/dbd17ae2-2c40-40de-b3d1-778f2dabb193_IMG_0451.jpeg';
 
@@ -170,10 +169,8 @@ export default function HomeScreen({ navigation }: any) {
   const [showInvite, setShowInvite] = useState(false);
 
   useEffect(() => {
-    if (!USE_LIVE_BACKEND) {
-      seedData().catch(() => {});
-    }
-  }, [seedData]);
+    seedData().catch(() => {});
+  }, []);
 
   const upcomingEvents = events?.filter((e) => e.status === 'upcoming').slice(0, 3);
   const latestProjects = projects?.slice(0, 3);
@@ -559,7 +556,9 @@ export default function HomeScreen({ navigation }: any) {
 
         {/* Invite Members Modal */}
         <Modal visible={showInvite} animationType="slide" presentationStyle="pageSheet">
-          <InviteScreen onClose={() => setShowInvite(false)} />
+          <Suspense fallback={<View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={colors.primary} /></View>}>
+            <InviteScreen onClose={() => setShowInvite(false)} />
+          </Suspense>
         </Modal>
       </SafeAreaView>
     </View>

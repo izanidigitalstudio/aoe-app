@@ -5,7 +5,7 @@ import {
   ArrowLeft, Calendar, MapPin, Award, Megaphone,
   Rocket, Zap, Edit3,
 } from "lucide-react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { colors } from "../theme";
 import { useDemoContext } from "../App";
 

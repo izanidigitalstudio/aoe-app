@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "convex/react";
 import { Utensils, MapPin, Globe, Calendar, Users, Diamond } from "lucide-react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { colors } from "../theme";
 import { useDemoContext } from "../App";
 

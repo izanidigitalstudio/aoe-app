@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Search, X, DollarSign, ExternalLink, MapPin, Clock, Award, ChevronRight } from "lucide-react";
 import { colors } from "../theme";
 
-import { AFRICAN_VCS } from "../../data/africanVCs";
-import { AI_TOOLS } from "../../data/aiTools";
-import { AI_GUIDES } from "../../data/aiGuides";
-import { CASE_STUDIES } from "../../data/caseStudies";
+import { AFRICAN_VCS } from "../../../data/africanVCs";
+import { AI_TOOLS } from "../../../data/aiTools";
+import { AI_GUIDES } from "../../../data/aiGuides";
+import { CASE_STUDIES } from "../../../data/caseStudies";
 
 type TabKey = "funders" | "tools" | "guides" | "cases";
 

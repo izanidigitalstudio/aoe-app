@@ -4,7 +4,7 @@ import {
   Search, X, Newspaper, Code, Wrench, Briefcase, BookOpen,
   Star, ExternalLink, Tag,
 } from "lucide-react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { colors } from "../theme";
 
 const CATEGORIES = ["all", "news", "tutorial", "tool", "case-study", "guide"];

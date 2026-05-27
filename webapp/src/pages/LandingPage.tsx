@@ -11,7 +11,7 @@ type Props = { onDemoAccess?: () => void };
 
 const DINNER_CITIES = [
   { city: "Johannesburg", country: "South Africa", date: "Feb 2026", status: "upcoming" },
-  { city: "Gaborone", country: "Botswana", date: "10 Apr 2026", status: "upcoming" },
+  { city: "Gaborone", country: "Botswana", date: "20 Jun 2026", status: "upcoming" },
   { city: "Lagos", country: "Nigeria", date: "Jun 2026", status: "upcoming" },
   { city: "Nairobi", country: "Kenya", date: "Aug 2026", status: "upcoming" },
   { city: "Kigali", country: "Rwanda", date: "Oct 2026", status: "upcoming" },

@@ -7,7 +7,7 @@ import {
   CloudSun, Package, Zap, Shield, X, Globe, TrendingUp,
   Building2, Mic, Calendar,
 } from "lucide-react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { colors } from "../theme";
 import { useDemoContext } from "../App";
 

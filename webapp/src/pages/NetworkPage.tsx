@@ -5,7 +5,7 @@ import {
   MapPin, ArrowLeft, Send, Users as UsersIcon,
   Briefcase, CheckCircle, Globe, Mail, Phone, Linkedin,
 } from "lucide-react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { colors } from "../theme";
 import { useDemoContext } from "../App";
 

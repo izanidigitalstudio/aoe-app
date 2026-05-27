@@ -15,11 +15,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation } from 'convex/react';
+import { a0 } from '../lib/a0';
 import * as ImagePicker from 'expo-image-picker';
-import { api } from '../convex/_generated/api';
+import { api } from '../lib/convexApi';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import { useDemo } from '../lib/DemoContext';
-import { useAuthActions } from '../lib/mockBackend';
 import AdminScreen from './AdminScreen';
 
 const COUNTRIES = [
@@ -33,11 +33,10 @@ const INDUSTRIES = [
   'E-Commerce', 'Logistics', 'Media', 'Real Estate', 'Manufacturing', 'Other',
 ];
 
-const ADMIN_PIN = '1977';
+const ADMIN_PIN = '2025';
 
 export default function ProfileScreen() {
   const { isDemo, exitDemo } = useDemo();
-  const { signOut } = useAuthActions();
   const user = useQuery(api.users.getCurrentUser);
   const updateProfile = useMutation(api.users.updateProfile);
   const ensureUser = useMutation(api.users.ensureCurrentUser);
@@ -69,7 +68,14 @@ export default function ProfileScreen() {
   };
 
   const handlePinSubmit = () => {
-    if (pinInput === ADMIN_PIN) {
+    if (pinInput === '1977') {
+      // Super pin - full admin dashboard access
+      setShowPinModal(false);
+      setPinInput('');
+      setPinError(false);
+      setShowAdmin(true);
+    } else if (pinInput === '2025') {
+      // Team pin - team access (currently same as super pin)
       setShowPinModal(false);
       setPinInput('');
       setPinError(false);
@@ -168,7 +174,7 @@ export default function ProfileScreen() {
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
+      { text: 'Sign Out', style: 'destructive', onPress: () => a0.auth.signOut() },
     ]);
   };
 

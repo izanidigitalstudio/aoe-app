@@ -1,21 +1,20 @@
 {
-  "name": "aoe-connect",
+  "name": "a0-project",
   "version": "1.0.0",
   "license": "0BSD",
   "private": true,
   "main": "index.ts",
   "scripts": {
     "start": "npx expo start",
-    "build": "npx expo export --platform web",
     "android": "npx expo run:android",
     "ios": "npx expo run:ios",
-    "web": "npx expo start --web",
-    "send:system-emails": "node scripts/send-system-emails.mjs"
+    "web": "npx expo start --web"
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.91",
     "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "~14.0.4",
+    "@react-native-community/datetimepicker": "~8.2.0",
     "@react-navigation/bottom-tabs": "^7.15.5",
     "@react-navigation/native": "^7.1.33",
     "@react-navigation/native-stack": "^7.14.10",
@@ -30,6 +29,7 @@
     "expo-linear-gradient": "~14.0.2",
     "expo-media-library": "~17.0.6",
     "expo-sharing": "~13.0.1",
+    "expo-sms": "~13.0.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.9",

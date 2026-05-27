@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "convex/react";
 import {
   Heart, MessageCircle, Plus, Sparkles, X, Send,
 } from "lucide-react";
-import { api } from "../../convex/_generated/api";
+import { api } from "../../../convex/_generated/api";
 import { colors } from "../theme";
 import { useDemoContext } from "../App";
 

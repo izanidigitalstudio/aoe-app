@@ -15,28 +15,54 @@ KeyboardAvoidingView,
 Platform,
 Dimensions,
 Image,
+Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery, useMutation } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { useQuery, useMutation, useConvex } from 'convex/react';
+import { api } from '../lib/convexApi';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import * as Contacts from 'expo-contacts';
 import * as DocumentPicker from 'expo-document-picker';
-import * as Clipboard from 'expo-clipboard';
-import * as MediaLibrary from 'expo-media-library';
-import { Share } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import ViewShot from 'react-native-view-shot';
 import QRCodeStyled from 'react-native-qrcode-styled';
 import { STATE_AGENCIES, StateAgency } from '../data/stateAgencies';
+import AdminSmsPanel from './admin/AdminSmsPanel';
+import AdminStateAgenciesPanel from './admin/AdminStateAgenciesPanel';
+import AdminMembersPanel from './admin/AdminMembersPanel';
+import AdminReportsPanel from './admin/AdminReportsPanel';
+import AdminEventsPanel from './admin/AdminEventsPanel';
+import AdminEventFormModal from './admin/AdminEventFormModal';
+import ConferenceAdminScreen from './ConferenceAdminScreen';
+import * as SMS from 'expo-sms';
 
 const { width } = Dimensions.get('window');
 
 const REGISTER_URL = 'https://app.aoeafrica.org.za';
 
-type AdminTab = 'overview' | 'members' | 'events' | 'payments' | 'reports' | 'crm';
+const copyRegistrationLink = async () => {
+  if (Platform.OS === 'web') {
+    const nav = globalThis as typeof globalThis & {
+      navigator?: { clipboard?: { writeText?: (text: string) => Promise<void> } };
+    };
+
+    if (nav.navigator?.clipboard?.writeText) {
+      await nav.navigator.clipboard.writeText(REGISTER_URL);
+      Alert.alert('Copied', 'Registration link copied to clipboard.');
+      return;
+    }
+  }
+
+  await Share.share({
+    title: 'Join AOE Africa',
+    message: REGISTER_URL,
+    url: REGISTER_URL,
+  });
+};
+
+type AdminTab = 'overview' | 'members' | 'events' | 'conferences' | 'payments' | 'reports' | 'crm' | 'sms';
 type MemberSubTab = 'list' | 'add' | 'bulk' | 'csv' | 'contacts';
 
 interface AdminScreenProps {
@@ -53,6 +79,7 @@ const MEMBER_TYPES = [
   { key: 'angel_investors', label: 'Angel Investors', icon: 'trending-up', color: '#6366F1' },
   { key: 'setas', label: 'SETAs', icon: 'school', color: '#14B8A6' },
   { key: 'state_agencies', label: 'State Agencies', icon: 'building', color: '#8B5CF6' },
+  { key: 'brand_managers', label: 'Brand Managers', icon: 'pricetag', color: '#EC4899' },
 ] as const;
 
 const INDUSTRIES = [
@@ -75,7 +102,10 @@ const IMPORT_FIELDS = [
   { key: 'industry', label: 'Industry' },
   { key: 'country', label: 'Country' },
   { key: 'city', label: 'City' },
+  { key: 'province', label: 'Province / State' },
+  { key: 'physicalAddress', label: 'Address' },
   { key: 'contactPhone', label: 'Phone' },
+  { key: 'mobileNumber', label: 'Mobile Number' },
   { key: 'contactEmail', label: 'Contact Email' },
   { key: 'website', label: 'Website' },
   { key: 'bio', label: 'Bio' },
@@ -83,6 +113,8 @@ const IMPORT_FIELDS = [
   { key: 'twitter', label: 'Twitter' },
   { key: 'achievements', label: 'Achievements' },
   { key: 'currentProjects', label: 'Current Projects' },
+  { key: 'futureProjects', label: 'Future Projects' },
+  { key: 'memberType', label: 'Member Type' },
 ] as const;
 
 const AUTO_DETECT_MAP: Record<string, string> = {
@@ -94,7 +126,10 @@ const AUTO_DETECT_MAP: Record<string, string> = {
   'industry': 'industry', 'sector': 'industry', 'field': 'industry',
   'country': 'country', 'nation': 'country', 'location': 'country',
   'city': 'city', 'town': 'city',
+  'province': 'province', 'state': 'province', 'region': 'province', 'county': 'province',
+  'address': 'physicalAddress', 'physical address': 'physicalAddress', 'street': 'physicalAddress', 'street address': 'physicalAddress', 'postal address': 'physicalAddress',
   'phone': 'contactPhone', 'telephone': 'contactPhone', 'tel': 'contactPhone', 'mobile': 'contactPhone', 'cell': 'contactPhone', 'phone number': 'contactPhone', 'contact phone': 'contactPhone', 'phonenumber': 'contactPhone',
+  'mobile number': 'mobileNumber', 'mobilenumber': 'mobileNumber', 'mobile phone': 'mobileNumber', 'mobilephone': 'mobileNumber', 'cell number': 'mobileNumber', 'cellnumber': 'mobileNumber', 'cell phone': 'mobileNumber', 'cellphone': 'mobileNumber', 'mobile no': 'mobileNumber', 'mob': 'mobileNumber', 'mob number': 'mobileNumber',
   'contact email': 'contactEmail', 'secondary email': 'contactEmail', 'alt email': 'contactEmail',
   'website': 'website', 'web': 'website', 'url': 'website', 'site': 'website', 'webpage': 'website',
   'bio': 'bio', 'about': 'bio', 'description': 'bio', 'biography': 'bio',
@@ -102,6 +137,8 @@ const AUTO_DETECT_MAP: Record<string, string> = {
   'twitter': 'twitter', 'twitter handle': 'twitter', 'x': 'twitter',
   'achievements': 'achievements', 'accomplishments': 'achievements',
   'projects': 'currentProjects', 'current projects': 'currentProjects',
+  'future projects': 'futureProjects', 'futureprojects': 'futureProjects', 'upcoming projects': 'futureProjects',
+  'member type': 'memberType', 'membertype': 'memberType', 'type': 'memberType', 'membership': 'memberType', 'membership type': 'memberType', 'category': 'memberType',
 };
 
 export default function AdminScreen({ onBack }: AdminScreenProps) {
@@ -124,6 +161,17 @@ const [selectedEvent, setSelectedEvent] = useState<any>(null);
 const [selectedPayment, setSelectedPayment] = useState<any>(null);
 const [paymentFilter, setPaymentFilter] = useState<string>('all');
 const [crmSearchQuery, setCrmSearchQuery] = useState('');
+const [searchFilterField, setSearchFilterField] = useState<string>('all');
+
+// SMS state
+const [smsTargetMode, setSmsTargetMode] = useState<'category' | 'group' | 'individual'>('category');
+const [smsCategoryFilter, setSmsCategoryFilter] = useState<string | null>(null);
+const [smsGroupType, setSmsGroupType] = useState<'industry' | 'country'>('industry');
+const [smsGroupValue, setSmsGroupValue] = useState<string | null>(null);
+const [smsMessage, setSmsMessage] = useState('');
+const [smsSelectedIds, setSmsSelectedIds] = useState<Set<string>>(new Set());
+const [smsSearchQuery, setSmsSearchQuery] = useState('');
+const [smsShowHistory, setSmsShowHistory] = useState(false);
 
 // Member category state
 const [selectedMemberType, setSelectedMemberType] = useState<string | null>(null);
@@ -141,6 +189,7 @@ const [newPhone, setNewPhone] = useState('');
 const [newBio, setNewBio] = useState('');
 const [newAchievements, setNewAchievements] = useState('');
 const [newCurrentProjects, setNewCurrentProjects] = useState('');
+const [newFutureProjects, setNewFutureProjects] = useState('');
 const [newLinkedIn, setNewLinkedIn] = useState('');
 const [newWebsite, setNewWebsite] = useState('');
 
@@ -153,6 +202,7 @@ const [importedHeaders, setImportedHeaders] = useState<string[]>([]);
 const [importedRows, setImportedRows] = useState<string[][]>([]);
 const [fieldMappings, setFieldMappings] = useState<Record<number, string>>({});
 const [mappingPickerIndex, setMappingPickerIndex] = useState<number | null>(null);
+const [importProgress, setImportProgress] = useState<{ current: number; total: number; added: number; skipped: number } | null>(null);
 
 // Event form state
 const [evtTitle, setEvtTitle] = useState('');
@@ -163,6 +213,8 @@ const [evtVenue, setEvtVenue] = useState('');
 const [evtCapacity, setEvtCapacity] = useState('30');
 const [evtPrice, setEvtPrice] = useState('');
 const [evtCurrency, setEvtCurrency] = useState('BWP');
+const [evtDate, setEvtDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+const [showDatePicker, setShowDatePicker] = useState(false);
 
 const [evtSponsors, setEvtSponsors] = useState<Array<{ name: string; tier: string; logo?: string; website?: string }>>([]);
 const [sponsorName, setSponsorName] = useState('');
@@ -233,21 +285,15 @@ const handleShareQRImage = async () => {
   try {
     const uri = await captureQR();
     if (!uri) { Alert.alert('Error', 'Could not capture QR code.'); return; }
-    const canShare = await Sharing.isAvailableAsync();
-    if (canShare) {
-      await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share AOE Registration QR' });
-    }
+    await Share.share({ url: uri, message: 'AOE Registration QR code' });
   } catch { Alert.alert('Error', 'Failed to share QR code.'); }
 };
 
 const handleSaveQRToPhotos = async () => {
   try {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission Required', 'Please grant photo library access.'); return; }
     const uri = await captureQR();
     if (!uri) { Alert.alert('Error', 'Could not capture QR code.'); return; }
-    await MediaLibrary.saveToLibraryAsync(uri);
-    Alert.alert('Saved', 'QR code saved to your photo library.');
+    await Share.share({ url: uri, message: 'Save AOE Registration QR code' });
   } catch { Alert.alert('Error', 'Failed to save QR code.'); }
 };
 
@@ -262,38 +308,36 @@ const handleShareLink = async () => {
 };
 
 const handleCopyRegLink = async () => {
-  await Clipboard.setStringAsync(REGISTER_URL);
-  Alert.alert('Copied', 'Registration link copied to clipboard.');
+  await copyRegistrationLink();
 };
 
 // Queries
 const stats = useQuery(api.admin.getStats);
-const members = useQuery(api.admin.listAllMembers, { search: searchQuery || undefined, memberType: selectedMemberType || undefined, industry: (selectedIndustry && selectedIndustry !== '__all__') ? selectedIndustry : undefined });
+const members = useQuery(api.admin.listAllMembers, { search: (searchFilterField === 'all' && searchQuery) ? searchQuery : undefined, memberType: selectedMemberType || undefined, industry: (selectedIndustry && selectedIndustry !== '__all__') ? selectedIndustry : undefined });
 const industryCounts = useQuery(
   api.admin.getMemberIndustryCounts,
   selectedMemberType === 'business_community' ? { memberType: 'business_community' } : 'skip'
 );
+const memberTypeCounts = useQuery(api.admin.getMemberTypeCounts);
 const crmMembers = useQuery(api.admin.listAllMembers, { search: crmSearchQuery || undefined });
 const events = useQuery(api.events.listEvents, {});
 const eventRsvps = useQuery(
 api.admin.getEventRsvps,
 selectedEvent ? { eventId: selectedEvent._id } : 'skip'
 );
-
-// Keep selectedEvent in sync with live query data
-useEffect(() => {
-  if (selectedEvent && events) {
-    const updated = events.find((e: any) => e._id === selectedEvent._id);
-    if (updated && JSON.stringify(updated) !== JSON.stringify(selectedEvent)) {
-      setSelectedEvent(updated);
-    }
-  }
-}, [events]);
-
-const payments = useQuery(api.admin.listPayments, 
+const smsMembers = useQuery(api.admin.getMembersWithPhones,
+  (smsTargetMode === 'category' || smsTargetMode === 'individual') && smsCategoryFilter
+    ? { memberType: smsCategoryFilter }
+    : smsTargetMode === 'group' && smsGroupValue
+      ? smsGroupType === 'industry' ? { industry: smsGroupValue } : { country: smsGroupValue }
+      : {}
+);
+const smsLogs = useQuery(api.admin.listBulkSmsLogs);
+const logBulkSmsMut = useMutation(api.admin.logBulkSms);
+const reportData = useQuery(api.admin.getReportData);
+const payments = useQuery(api.admin.listPayments,
 paymentFilter === 'all' ? {} : { status: paymentFilter }
 );
-const reportData = useQuery(api.admin.getReportData);
 const memberNotes = useQuery(
 api.admin.getMemberNotes,
 selectedMember ? { memberId: selectedMember._id } : 'skip'
@@ -333,7 +377,8 @@ const removePaidGuestMut = useMutation(api.admin.removePaidGuest);
 
 // Guest speaker edit state
 const [editingSpeakerIndex, setEditingSpeakerIndex] = useState<number | null>(null);
-const [selectedAgency, setSelectedAgency] = useState<StateAgency | null>(null);
+
+const convexClient = useConvex();
 
 const clearSpeakerForm = () => {
   setSpeakerName(''); setSpeakerEmail(''); setSpeakerPhone('');
@@ -410,7 +455,7 @@ const openEditSpeaker = (speaker: any, index: number) => {
 const clearMemberForm = () => {
   setNewName(''); setNewEmail(''); setNewCompany(''); setNewRole('');
   setNewIndustry(''); setNewCountry(''); setNewCity(''); setNewPhone('');
-  setNewBio(''); setNewAchievements(''); setNewCurrentProjects(''); setNewLinkedIn('');
+  setNewBio(''); setNewAchievements(''); setNewCurrentProjects(''); setNewFutureProjects(''); setNewLinkedIn('');
   setNewWebsite('');
 };
 
@@ -578,6 +623,7 @@ const handleAddMember = async () => {
       linkedIn: newLinkedIn.trim() || undefined,
       achievements: newAchievements.trim() || undefined,
       currentProjects: newCurrentProjects.trim() || undefined,
+      futureProjects: newFutureProjects.trim() || undefined,
       memberType: selectedMemberType || undefined,
     });
     Alert.alert('Success', `${newName} has been added`);
@@ -605,6 +651,7 @@ const handleUpdateMember = async () => {
       linkedIn: newLinkedIn.trim() || undefined,
       achievements: newAchievements.trim() || undefined,
       currentProjects: newCurrentProjects.trim() || undefined,
+      futureProjects: newFutureProjects.trim() || undefined,
       memberType: selectedMemberType || undefined,
     });
     Alert.alert('Updated', 'Member updated successfully');
@@ -673,8 +720,13 @@ const handleConfirmImport = async () => {
     return;
   }
   try {
-    const members = importedRows.map((row: string[]) => {
-      const member: any = { memberType: selectedMemberType || undefined };
+    // Build all member objects from imported rows
+    const allMembers = importedRows.map((row: string[]) => {
+      const member: any = {};
+      // Set memberType if selected
+      if (selectedMemberType) {
+        member.memberType = selectedMemberType;
+      }
       Object.entries(fieldMappings).forEach(([colIdxStr, fieldKey]) => {
         if (fieldKey === 'skip') return;
         const colIdx = parseInt(colIdxStr);
@@ -686,23 +738,126 @@ const handleConfirmImport = async () => {
         member.name = [member.name, member.surname].filter(Boolean).join(' ').trim();
         delete member.surname;
       }
-      return member;
+      // If no name but has email, use email prefix as name
+      if (!member.name && member.email) {
+        member.name = member.email.split('@')[0].replace(/[._-]/g, ' ').trim();
+      }
+      // Clean: remove any undefined/null values
+      const cleaned: any = {};
+      for (const [k, v] of Object.entries(member)) {
+        if (v !== undefined && v !== null && v !== '') {
+          cleaned[k] = String(v);
+        }
+      }
+      return cleaned;
     }).filter((m: any) => m.name && m.email);
 
-    if (members.length === 0) {
+    if (allMembers.length === 0) {
       Alert.alert('Error', 'No valid members found after mapping. Ensure rows have name and email values.');
       return;
     }
 
-    const result = await bulkAddMembers({ members });
-    Alert.alert('Done', `Added: ${result.added}, Skipped (duplicates): ${result.skipped}`);
+    // Phase 1: Check which emails already exist (in batches of 500)
+    setImportProgress({ current: 0, total: allMembers.length, added: 0, skipped: 0 });
+
+    const allEmails = allMembers.map((m: any) => m.email);
+    const existingEmailSet = new Set<string>();
+    const EMAIL_CHECK_SIZE = 500;
+
+    for (let i = 0; i < allEmails.length; i += EMAIL_CHECK_SIZE) {
+      const emailBatch = allEmails.slice(i, i + EMAIL_CHECK_SIZE);
+      try {
+        const existing = await convexClient.query(api.admin.getExistingEmails, { emails: emailBatch });
+        existing.forEach((e: string) => existingEmailSet.add(e));
+      } catch (err) {
+        // If email check fails, proceed without pre-filtering
+        console.log('Email pre-check failed, proceeding without filter:', err);
+        break;
+      }
+    }
+
+    // Separate new members from already-imported ones
+    const newMembers = allMembers.filter((m: any) => !existingEmailSet.has(m.email));
+    const alreadyImported = allMembers.length - newMembers.length;
+
+    if (newMembers.length === 0) {
+      setImportProgress(null);
+      Alert.alert('All Imported', `All ${allMembers.length} members are already in the database. Nothing new to import.`);
+      return;
+    }
+
+    // Phase 2: Import only new members in batches
+    const CHUNK_SIZE = 50;
+    let totalAdded = 0;
+    let totalSkipped = alreadyImported;
+    let failedBatches: { idx: number; error: string }[] = [];
+    const totalChunks = Math.ceil(newMembers.length / CHUNK_SIZE);
+
+    setImportProgress({ current: 0, total: allMembers.length, added: 0, skipped: totalSkipped });
+
+    for (let batchIdx = 0; batchIdx < totalChunks; batchIdx++) {
+      const start = batchIdx * CHUNK_SIZE;
+      const chunk = newMembers.slice(start, start + CHUNK_SIZE);
+
+      let success = false;
+      let lastError = '';
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const result = await bulkAddMembers({ members: chunk });
+          totalAdded += result.added;
+          totalSkipped += result.skipped;
+          success = true;
+          break;
+        } catch (batchError: any) {
+          lastError = batchError?.message || 'Unknown error';
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          }
+        }
+      }
+
+      if (!success) {
+        failedBatches.push({ idx: batchIdx + 1, error: lastError });
+        // Show error on first failure so user knows what's happening
+        if (failedBatches.length === 1) {
+          Alert.alert(
+            'Batch Error',
+            `Batch ${batchIdx + 1} failed: ${lastError}\n\nContinuing with remaining batches...`
+          );
+        }
+      }
+
+      const processed = alreadyImported + Math.min(start + CHUNK_SIZE, newMembers.length);
+      setImportProgress({ current: processed, total: allMembers.length, added: totalAdded, skipped: totalSkipped });
+
+      // Delay between batches
+      if (batchIdx < totalChunks - 1) {
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+
+    setImportProgress(null);
+
+    let message = `New members added: ${totalAdded}`;
+    if (alreadyImported > 0) {
+      message += `\nAlready in database: ${alreadyImported}`;
+    }
+    if (totalSkipped - alreadyImported > 0) {
+      message += `\nDuplicates in file: ${totalSkipped - alreadyImported}`;
+    }
+    if (failedBatches.length > 0) {
+      message += `\n\n${failedBatches.length} batch(es) failed. Error: ${failedBatches[0].error}\n\nRe-run the import to retry failed records.`;
+    }
+    Alert.alert('Import Complete', message);
     setShowFieldMapping(false);
     setBulkText('');
     setImportedHeaders([]);
     setImportedRows([]);
     setFieldMappings({});
   } catch (e: any) {
-    Alert.alert('Error', e.message);
+    setImportProgress(null);
+    Alert.alert('Import Error', `${e.message}\n\nYou can re-run the import safely - already imported members will be skipped.`);
   }
 };
 
@@ -719,6 +874,7 @@ const openEditMember = (member: any) => {
   setNewBio(member.bio || '');
   setNewAchievements(member.achievements || '');
   setNewCurrentProjects(member.currentProjects || '');
+  setNewFutureProjects(member.futureProjects || '');
   setNewLinkedIn(member.linkedIn || '');
   setNewWebsite(member.website || '');
   setShowEditMember(true);
@@ -728,6 +884,8 @@ const clearEventForm = () => {
   setEvtTitle(''); setEvtDesc(''); setEvtCity(''); setEvtCountry('');
   setEvtVenue(''); setEvtCapacity('30'); setEvtPrice(''); setEvtCurrency('BWP');
   setEvtSponsors([]);
+  setEvtDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+  setShowDatePicker(false);
 };
 
 const handleCreateEvent = async () => {
@@ -742,7 +900,7 @@ const handleCreateEvent = async () => {
       city: evtCity.trim(),
       country: evtCountry.trim(),
       venue: evtVenue.trim(),
-      date: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      date: evtDate.getTime(),
       capacity: parseInt(evtCapacity) || 30,
       ticketPrice: evtPrice ? parseFloat(evtPrice) : undefined,
       currency: evtCurrency || undefined,
@@ -766,6 +924,7 @@ const handleUpdateEvent = async () => {
       city: evtCity.trim() || undefined,
       country: evtCountry.trim() || undefined,
       venue: evtVenue.trim() || undefined,
+      date: evtDate.getTime(),
       capacity: parseInt(evtCapacity) || undefined,
       ticketPrice: evtPrice ? parseFloat(evtPrice) : undefined,
       currency: evtCurrency || undefined,
@@ -793,6 +952,7 @@ const openEditEvent = (event: any) => {
   setSelectedEvent(event);
   setEvtTitle(event.title || '');
   setEvtDesc(event.description || '');
+  setEvtDate(event.date ? new Date(event.date) : new Date());
   setEvtCity(event.city || '');
   setEvtCountry(event.country || '');
   setEvtVenue(event.venue || '');
@@ -900,12 +1060,7 @@ const exportToCSV = async (type: 'invited' | 'speakers' | 'rsvps' | 'paid' | 'al
   try {
     const fileUri = FileSystem.documentDirectory + fileName;
     await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-    const canShare = await Sharing.isAvailableAsync();
-    if (canShare) {
-      await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: `Export ${type}` });
-    } else {
-      Alert.alert('Exported', `File saved as ${fileName}`);
-    }
+    await Share.share({ url: fileUri, message: `Exported ${fileName}` });
   } catch (e) {
     Alert.alert('Error', 'Failed to export. Please try again.');
   }
@@ -929,12 +1084,7 @@ const renderInput = (label: string, value: string, setter: (v: string) => void, 
 const renderChipPicker = (label: string, options: string[], selected: string, onSelect: (v: string) => void) => (
   <View style={styles.inputGroup}>
     <Text style={styles.inputLabel}>{label}</Text>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={{ marginTop: 4, flexGrow: 0 }}
-      contentContainerStyle={{ paddingVertical: 2, paddingRight: 12, alignItems: 'center' }}
-    >
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
       {options.map(opt => (
         <TouchableOpacity
           key={opt}
@@ -1161,486 +1311,57 @@ const getMemberTypeLabel = (key: string | null) => {
   return MEMBER_TYPES.find(t => t.key === key)?.label || key;
 };
 
-const renderMembers = () => {
-  // If no category selected, show category cards
-  if (!selectedMemberType) {
-    return (
-      <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.sectionTitle}>Member Categories</Text>
-        <Text style={[styles.helpText, { marginBottom: 16 }]}>Browse all members or filter by industry</Text>
-        {MEMBER_TYPES.map((type) => (
-          <TouchableOpacity
-            key={type.key}
-            style={[styles.memberCard, { borderLeftWidth: 4, borderLeftColor: type.color, marginBottom: 12 }]}
-            onPress={() => { setSelectedMemberType(type.key); setSelectedIndustry(null); setMemberSubTab('list'); setSearchQuery(''); }}
-          >
-            <View style={[styles.categoryIconContainer, { backgroundColor: type.color + '20' }]}>
-              <Ionicons name={type.icon as any} size={28} color={type.color} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.memberName, { fontSize: fontSize.md }]}>{type.label}</Text>
-              <Text style={styles.memberSub}>Tap to manage members</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
-  }
-
-  // Business Community: show industry sub-categories first
-  if (selectedMemberType === 'business_community' && !selectedIndustry) {
-    const INDUSTRY_ICONS: Record<string, string> = {
-      'Mining': 'hammer', 'Mining & Metals': 'hammer', 'Metal mining': 'hammer',
-      'Real estate': 'home', 'Real Estate': 'home',
-      'Construction': 'construct', 'General building contractors': 'construct', 'Heavy construction except building': 'construct',
-      'Finance': 'cash', 'Financial Services': 'cash', 'Banking': 'cash', 'Banking & Finance': 'cash', 'FinTech': 'cash', 'Fintech': 'cash',
-      'Health services': 'medkit', 'Healthcare': 'medkit', 'Hospital & Health Care': 'medkit',
-      'Services': 'briefcase', 'Business services': 'briefcase',
-      'Communications': 'chatbubbles', 'Telecommunications': 'chatbubbles',
-      'Transportation services': 'car', 'Logistics': 'car', 'Transportation': 'car',
-      'Education services': 'school', 'Education': 'school', 'Higher Education': 'school',
-      'Energy': 'flash', 'Electric': 'flash', 'Energy & Water': 'flash',
-      'Agriculture': 'leaf', 'Agricultural services': 'leaf',
-      'Hotels & other lodging places': 'bed', 'Tourism': 'bed', 'Tourism & Hospitality': 'bed',
-      'Legal services': 'document-text', 'Legal Tech': 'document-text',
-      'Insurance agents': 'shield-checkmark', 'Insurance': 'shield-checkmark',
-      'Manufacturing': 'cog', 'Miscellaneous manufacturing industries': 'cog',
-      'Information Technology & Services': 'laptop', 'Cybersecurity': 'laptop',
-      'Engineering & management services': 'settings',
-      'Miscellaneous retail': 'storefront', 'Retail': 'storefront', 'Wholesale & Retail': 'storefront',
-    };
-    const INDUSTRY_COLORS: string[] = [
-      '#8B5CF6', '#0EA5E9', '#F59E0B', '#10B981', '#EF4444', '#6366F1',
-      '#14B8A6', '#EC4899', '#F97316', '#84CC16', '#06B6D4', '#A855F7',
-    ];
-
-    return (
-      <View style={styles.tabContent}>
-        <View style={styles.searchRow}>
-          <TouchableOpacity onPress={() => { setSelectedMemberType(null); setSelectedIndustry(null); setSearchQuery(''); }} style={{ marginRight: 8 }}>
-            <Ionicons name="arrow-back" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.sectionTitle, { flex: 1, marginBottom: 0 }]}>Business Community</Text>
-          <Text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>
-            {industryCounts ? industryCounts.reduce((sum, c) => sum + c.count, 0) : '...'} members
-          </Text>
-        </View>
-        <Text style={[styles.helpText, { marginBottom: 12 }]}>Select an industry to view members</Text>
-
-        {industryCounts ? (
-          <FlatList
-            data={industryCounts}
-            keyExtractor={(item) => item.industry}
-            showsVerticalScrollIndicator={false}
-            ListHeaderComponent={
-              <TouchableOpacity
-                style={[styles.memberCard, { borderLeftWidth: 4, borderLeftColor: colors.primary, marginBottom: 10 }]}
-                onPress={() => { setSelectedIndustry('__all__'); setSearchQuery(''); }}
-              >
-                <View style={[styles.categoryIconContainer, { backgroundColor: colors.primary + '20' }]}>
-                  <Ionicons name="people" size={24} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[styles.memberName, { fontSize: fontSize.md }]}>All Members</Text>
-                  <Text style={styles.memberSub}>{industryCounts.reduce((sum: number, c: any) => sum + c.count, 0)} members</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
-            }
-            renderItem={({ item, index }) => {
-              const iconName = INDUSTRY_ICONS[item.industry] || 'business';
-              const color = INDUSTRY_COLORS[index % INDUSTRY_COLORS.length];
-              return (
-                <TouchableOpacity
-                  style={[styles.memberCard, { borderLeftWidth: 4, borderLeftColor: color, marginBottom: 10 }]}
-                  onPress={() => { setSelectedIndustry(item.industry); setSearchQuery(''); }}
-                >
-                  <View style={[styles.categoryIconContainer, { backgroundColor: color + '20' }]}>
-                    <Ionicons name={iconName as any} size={24} color={color} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.memberName, { fontSize: fontSize.md }]}>{item.industry}</Text>
-                    <Text style={styles.memberSub}>{item.count} member{item.count !== 1 ? 's' : ''}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-                </TouchableOpacity>
-              );
-            }}
-            ListEmptyComponent={<Text style={styles.emptyText}>No industry data</Text>}
-          />
-        ) : (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-        )}
-      </View>
-    );
-  }
-
-  // Category detail view
-  const currentType = MEMBER_TYPES.find(t => t.key === selectedMemberType);
-
-  // Special rendering for State Agencies - show static data instead of DB members
-  if (selectedMemberType === 'state_agencies') {
-    const agencyFiltered = STATE_AGENCIES.filter(a => {
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      return a.name.toLowerCase().includes(q) || a.acronym.toLowerCase().includes(q) || a.focus.toLowerCase().includes(q) || a.ceoName.toLowerCase().includes(q);
-    });
-
-    return (
-      <View style={styles.tabContent}>
-        <View style={styles.searchRow}>
-          <TouchableOpacity onPress={() => { setSelectedMemberType(null); setSearchQuery(''); }} style={{ marginRight: 8 }}>
-            <Ionicons name="arrow-back" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.sectionTitle, { flex: 1, marginBottom: 0 }]}>State Agencies</Text>
-          <Text style={{ color: colors.textMuted, fontSize: fontSize.sm }}>{agencyFiltered.length} agencies</Text>
-        </View>
-
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={18} color={colors.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search agencies, acronyms, CEO..."
-            placeholderTextColor={colors.textMuted}
-          />
-        </View>
-
-        <FlatList
-          data={agencyFiltered}
-          keyExtractor={(item) => item.acronym}
-          showsVerticalScrollIndicator={false}
-          style={{ marginTop: 8 }}
-          renderItem={({ item }: { item: StateAgency }) => (
-            <TouchableOpacity
-              style={[styles.memberCard, { borderLeftWidth: 4, borderLeftColor: '#8B5CF6' }]}
-              onPress={() => setSelectedAgency(item)}
-            >
-              <View style={[styles.categoryIconContainer, { backgroundColor: '#8B5CF6' + '20' }]}>
-                {item.logo ? (
-                  <Image source={{ uri: item.logo }} style={{ width: 28, height: 28, resizeMode: 'contain' }} />
-                ) : (
-                  <Ionicons name="business" size={22} color="#8B5CF6" />
-                )}
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.memberName}>{item.name}</Text>
-                <Text style={[styles.memberSub, { color: '#8B5CF6', fontWeight: '600' }]}>{item.acronym} - {item.type}</Text>
-                <Text style={styles.memberSub} numberOfLines={1}>{item.focus}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
-                  <Ionicons name="person" size={12} color={colors.primary} />
-                  <Text style={[styles.memberSub, { color: colors.primary, fontWeight: '500', marginTop: 0 }]} numberOfLines={1}>{item.ceoName}</Text>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 4 }}>
-                  <Ionicons name="location" size={12} color={colors.textMuted} />
-                  <Text style={[styles.memberSub, { marginTop: 0 }]}>{item.city}, {item.country}</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={<Text style={styles.emptyText}>No agencies found</Text>}
-        />
-
-        {/* Agency Detail Modal */}
-        <Modal visible={!!selectedAgency} animationType="slide" transparent>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{selectedAgency?.acronym}</Text>
-                <TouchableOpacity onPress={() => setSelectedAgency(null)}>
-                  <Ionicons name="close" size={24} color={colors.text} />
-                </TouchableOpacity>
-              </View>
-              {selectedAgency && (
-                <ScrollView showsVerticalScrollIndicator={false}>
-                  {/* Header with logo */}
-                  <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-                    <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: '#8B5CF6' + '20', alignItems: 'center', justifyContent: 'center' }}>
-                      {selectedAgency.logo ? (
-                        <Image source={{ uri: selectedAgency.logo }} style={{ width: 50, height: 50, resizeMode: 'contain' }} />
-                      ) : (
-                        <Ionicons name="business" size={32} color="#8B5CF6" />
-                      )}
-                    </View>
-                    <Text style={{ fontSize: fontSize.lg, fontWeight: '700', color: colors.text, marginTop: 12, textAlign: 'center' }}>{selectedAgency.name}</Text>
-                    <Text style={{ fontSize: fontSize.md, color: '#8B5CF6', fontWeight: '600', marginTop: 4 }}>{selectedAgency.acronym}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: '#8B5CF6' + '20', marginTop: 8 }]}>
-                      <Text style={[styles.statusText, { color: '#8B5CF6' }]}>{selectedAgency.type}</Text>
-                    </View>
-                  </View>
-
-                  {/* Leadership / CEO Section */}
-                  <View style={{ backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: colors.primary }}>
-                    <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.text, marginBottom: 4 }}>Leadership / Head of Agency</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary + '20', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="person" size={18} color={colors.primary} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: fontSize.md, fontWeight: '600', color: colors.text }}>{selectedAgency.ceoName}</Text>
-                        <Text style={{ fontSize: fontSize.xs, color: colors.textSecondary }}>CEO / Head of Agency</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* About */}
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.text, marginBottom: 6 }}>About</Text>
-                    <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 }}>{selectedAgency.description}</Text>
-                  </View>
-
-                  {/* Focus */}
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.text, marginBottom: 6 }}>Focus Area</Text>
-                    <View style={{ backgroundColor: '#8B5CF6' + '15', paddingHorizontal: 12, paddingVertical: 8, borderRadius: borderRadius.md, alignSelf: 'flex-start' }}>
-                      <Text style={{ fontSize: fontSize.sm, color: '#8B5CF6', fontWeight: '600' }}>{selectedAgency.focus}</Text>
-                    </View>
-                  </View>
-
-                  {/* Details grid */}
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-                    <View style={{ backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: 12, minWidth: (width - 68) / 2, flex: 1, borderWidth: 1, borderColor: colors.border }}>
-                      <Ionicons name="location" size={16} color={colors.primary} />
-                      <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 }}>Location</Text>
-                      <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.text, marginTop: 2 }}>{selectedAgency.city}</Text>
-                    </View>
-                    <View style={{ backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: 12, minWidth: (width - 68) / 2, flex: 1, borderWidth: 1, borderColor: colors.border }}>
-                      <Ionicons name="calendar" size={16} color={colors.primary} />
-                      <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 }}>Founded</Text>
-                      <Text style={{ fontSize: fontSize.sm, fontWeight: '600', color: colors.text, marginTop: 2 }}>{selectedAgency.founded}</Text>
-                    </View>
-                  </View>
-
-                  {/* Contact Information */}
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: fontSize.sm, fontWeight: '700', color: colors.text, marginBottom: 8 }}>Contact Information</Text>
-                    
-                    <TouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                      onPress={() => Linking.openURL(`mailto:${selectedAgency.email}`)}
-                    >
-                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="mail" size={16} color={colors.primary} />
-                      </View>
-                      <Text style={{ fontSize: fontSize.sm, color: colors.primary, flex: 1 }}>{selectedAgency.email}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                      onPress={() => Linking.openURL(`tel:${selectedAgency.phone}`)}
-                    >
-                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.success + '15', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="call" size={16} color={colors.success} />
-                      </View>
-                      <Text style={{ fontSize: fontSize.sm, color: colors.text, flex: 1 }}>{selectedAgency.phone}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
-                      onPress={() => Linking.openURL(`https://${selectedAgency.website}`)}
-                    >
-                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.info + '15', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="globe" size={16} color={colors.info} />
-                      </View>
-                      <Text style={{ fontSize: fontSize.sm, color: colors.info, flex: 1 }}>{selectedAgency.website}</Text>
-                    </TouchableOpacity>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 }}>
-                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: colors.warning + '15', alignItems: 'center', justifyContent: 'center' }}>
-                        <Ionicons name="map" size={16} color={colors.warning} />
-                      </View>
-                      <Text style={{ fontSize: fontSize.sm, color: colors.textSecondary, flex: 1 }}>{selectedAgency.address}, {selectedAgency.city}</Text>
-                    </View>
-                  </View>
-
-                  <View style={{ height: 40 }} />
-                </ScrollView>
-              )}
-            </View>
-          </View>
-        </Modal>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.tabContent}>
-      {/* Back to categories + title */}
-      <View style={styles.searchRow}>
-        <TouchableOpacity onPress={() => {
-          if (selectedMemberType === 'business_community' && selectedIndustry) {
-            setSelectedIndustry(null);
-            setSearchQuery('');
-          } else {
-            setSelectedMemberType(null);
-            setSelectedIndustry(null);
-            setSearchQuery('');
-          }
-        }} style={{ marginRight: 8 }}>
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.sectionTitle, { flex: 1, marginBottom: 0 }]}>
-          {selectedIndustry === '__all__' ? 'All Members' : selectedIndustry ? selectedIndustry : currentType?.label}
-        </Text>
-      </View>
-
-      {/* Import method buttons */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 12 }}>
-        <TouchableOpacity
-          style={[styles.importMethodBtn, memberSubTab === 'list' && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-          onPress={() => setMemberSubTab('list')}
-        >
-          <Ionicons name="list" size={16} color={memberSubTab === 'list' ? colors.white : colors.textSecondary} />
-          <Text style={[styles.importMethodText, memberSubTab === 'list' && { color: colors.white }]}>Members</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.importMethodBtn, memberSubTab === 'add' && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-          onPress={() => { setMemberSubTab('add'); clearMemberForm(); setShowAddMember(true); }}
-        >
-          <Ionicons name="person-add" size={16} color={memberSubTab === 'add' ? colors.white : colors.textSecondary} />
-          <Text style={[styles.importMethodText, memberSubTab === 'add' && { color: colors.white }]}>Add Member</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.importMethodBtn, memberSubTab === 'bulk' && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-          onPress={() => setMemberSubTab('bulk')}
-        >
-          <Ionicons name="grid" size={16} color={memberSubTab === 'bulk' ? colors.white : colors.textSecondary} />
-          <Text style={[styles.importMethodText, memberSubTab === 'bulk' && { color: colors.white }]}>Excel Import</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.importMethodBtn]}
-          onPress={handleCSVImport}
-        >
-          <Ionicons name="document-text" size={16} color={colors.textSecondary} />
-          <Text style={styles.importMethodText}>CSV Import</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.importMethodBtn]}
-          onPress={handleContactsImport}
-        >
-          <Ionicons name="call" size={16} color={colors.textSecondary} />
-          <Text style={styles.importMethodText}>From Contacts</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {memberSubTab === 'bulk' ? (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <Text style={styles.helpText}>Paste from Excel/Sheets - include a header row for auto-detection, or you'll map columns manually in the next step.</Text>
-          <TextInput
-            style={[styles.input, { height: 200, textAlignVertical: 'top' }]}
-            value={bulkText}
-            onChangeText={setBulkText}
-            multiline
-            placeholder={'Name, Email, Company, Role, Country\nJohn Doe, john@email.com, Acme, CEO, Botswana\nJane Smith, jane@email.com, Inc, CTO, Kenya'}
-            placeholderTextColor={colors.textMuted}
-          />
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleBulkAdd}>
-            <Text style={styles.primaryBtnText}>Map Fields & Import</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      ) : (
-        <>
-          <View style={styles.searchBox}>
-            <Ionicons name="search" size={18} color={colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder={`Search ${selectedIndustry === '__all__' ? 'All Members' : selectedIndustry || currentType?.label}...`}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-          <FlatList
-            data={members || []}
-            keyExtractor={(item: any) => item._id}
-            showsVerticalScrollIndicator={false}
-            style={{ marginTop: 8 }}
-            renderItem={({ item }: any) => (
-              <TouchableOpacity style={styles.memberCard} onPress={() => openEditMember(item)}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.memberName}>{item.name || 'Unnamed'}</Text>
-                  <Text style={styles.memberSub}>{item.email}</Text>
-                  {item.company && <Text style={styles.memberSub}>{item.company}{item.role ? ` - ${item.role}` : ''}</Text>}
-                  {item.contactPhone && <Text style={styles.memberSub}>{item.contactPhone}</Text>}
-                  {item.country && <Text style={[styles.memberSub, { color: currentType?.color || colors.primary }]}>{item.country}</Text>}
-                  {item.website && (
-                    <TouchableOpacity onPress={() => { const url = item.website.startsWith('http') ? item.website : `https://${item.website}`; Linking.openURL(url); }}>
-                      <Text style={[styles.memberSub, { color: colors.info, textDecorationLine: 'underline' }]}>{item.website}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity onPress={() => { setSelectedMember(item); setShowMemberNotes(true); }}>
-                    <Ionicons name="chatbubble-outline" size={20} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleDeleteMember(item)}>
-                    <Ionicons name="trash-outline" size={20} color={colors.error} />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={styles.emptyText}>No members in {currentType?.label}</Text>}
-          />
-        </>
-      )}
-    </View>
-  );
-};
+const renderMembers = () => (
+  <AdminMembersPanel
+    styles={styles}
+    colors={colors}
+    borderRadius={borderRadius}
+    fontSize={fontSize}
+    MEMBER_TYPES={MEMBER_TYPES}
+    selectedMemberType={selectedMemberType}
+    setSelectedMemberType={setSelectedMemberType}
+    selectedIndustry={selectedIndustry}
+    setSelectedIndustry={setSelectedIndustry}
+    memberSubTab={memberSubTab}
+    setMemberSubTab={setMemberSubTab}
+    searchQuery={searchQuery}
+    setSearchQuery={setSearchQuery}
+    searchFilterField={searchFilterField}
+    setSearchFilterField={setSearchFilterField}
+    memberTypeCounts={memberTypeCounts}
+    industryCounts={industryCounts}
+    members={members}
+    handleCSVImport={handleCSVImport}
+    handleContactsImport={handleContactsImport}
+    handleBulkAdd={handleBulkAdd}
+    openEditMember={openEditMember}
+    handleDeleteMember={handleDeleteMember}
+    clearMemberForm={clearMemberForm}
+    setShowAddMember={setShowAddMember}
+    setShowMemberNotes={setShowMemberNotes}
+    setSelectedMember={setSelectedMember}
+    bulkText={bulkText}
+    setBulkText={setBulkText}
+  />
+);
 
 // ─── TAB: EVENTS ───
 const renderEvents = () => (
-  <View style={styles.tabContent}>
-    <View style={styles.searchRow}>
-      <Text style={styles.sectionTitle}>Events</Text>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <TouchableOpacity style={styles.addBtn} onPress={async () => { try { await sortEventsByDate(); } catch (e: any) { Alert.alert('Error', e.message); } }}>
-          <Ionicons name="swap-vertical" size={18} color={colors.white} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.addBtn} onPress={() => { clearEventForm(); setShowCreateEvent(true); }}>
-          <Ionicons name="add" size={20} color={colors.white} />
-        </TouchableOpacity>
-      </View>
-    </View>
-    <FlatList
-      data={events || []}
-      keyExtractor={(item) => item._id}
-      showsVerticalScrollIndicator={false}
-      renderItem={({ item }) => (
-        <View style={styles.memberCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.memberName}>{item.title}</Text>
-            <Text style={styles.memberSub}>{item.city}, {item.country} - {item.venue}</Text>
-            <Text style={styles.memberSub}>{formatDate(item.date)} | Cap: {item.capacity} | RSVPs: {item.rsvpCount}</Text>
-            {item.ticketPrice ? <Text style={[styles.memberSub, { color: colors.primary }]}>{formatCurrency(item.ticketPrice, item.currency || 'BWP')}</Text> : null}
-            <View style={[styles.statusBadge, { backgroundColor: item.status === 'upcoming' ? colors.info + '30' : item.status === 'past' ? colors.textMuted + '30' : colors.success + '30' }]}>
-              <Text style={[styles.statusText, { color: item.status === 'upcoming' ? colors.info : item.status === 'past' ? colors.textMuted : colors.success }]}>{item.status}</Text>
-            </View>
-          </View>
-          <View style={{ gap: 8, alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => { setSelectedEvent(item); setShowEventRsvps(true); }}>
-              <Ionicons name="people-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => openEditEvent(item)}>
-              <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDeleteEvent(item)}>
-              <Ionicons name="trash-outline" size={20} color={colors.error} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={async () => { try { await reorderEvent({ eventId: item._id, direction: 'up' }); } catch {} }}>
-              <Ionicons name="arrow-up" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={async () => { try { await reorderEvent({ eventId: item._id, direction: 'down' }); } catch {} }}>
-              <Ionicons name="arrow-down" size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-      ListEmptyComponent={<Text style={styles.emptyText}>No events yet</Text>}
-    />
-  </View>
+  <AdminEventsPanel
+    styles={styles}
+    colors={colors}
+    events={events}
+    formatDate={formatDate}
+    formatCurrency={formatCurrency}
+    sortEventsByDate={sortEventsByDate}
+    clearEventForm={clearEventForm}
+    setShowCreateEvent={setShowCreateEvent}
+    setSelectedEvent={setSelectedEvent}
+    setShowEventRsvps={setShowEventRsvps}
+    openEditEvent={openEditEvent}
+    handleDeleteEvent={handleDeleteEvent}
+    reorderEvent={reorderEvent}
+  />
 );
 
 // ─── TAB: PAYMENTS ───
@@ -1692,70 +1413,44 @@ const renderPayments = () => (
   </View>
 );
 
+// ─── TAB: BULK SMS ───
+const renderSMS = () => (
+  <AdminSmsPanel
+    styles={styles}
+    smsShowHistory={smsShowHistory}
+    setSmsShowHistory={setSmsShowHistory}
+    smsLogs={smsLogs || []}
+    smsMembers={smsMembers || []}
+    reportData={reportData}
+    memberTypes={MEMBER_TYPES as any}
+    industries={INDUSTRIES}
+    smsTargetMode={smsTargetMode}
+    setSmsTargetMode={setSmsTargetMode}
+    smsCategoryFilter={smsCategoryFilter}
+    setSmsCategoryFilter={setSmsCategoryFilter}
+    smsGroupType={smsGroupType}
+    setSmsGroupType={setSmsGroupType}
+    smsGroupValue={smsGroupValue}
+    setSmsGroupValue={setSmsGroupValue}
+    smsMessage={smsMessage}
+    setSmsMessage={setSmsMessage}
+    smsSelectedIds={smsSelectedIds}
+    setSmsSelectedIds={setSmsSelectedIds}
+    smsSearchQuery={smsSearchQuery}
+    setSmsSearchQuery={setSmsSearchQuery}
+    logBulkSmsMut={logBulkSmsMut}
+  />
+);
+
 // ─── TAB: REPORTS ───
 const renderReports = () => (
-  <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
-    <Text style={styles.sectionTitle}>Analytics</Text>
-    {reportData ? (
-      <>
-        <Text style={styles.subSectionTitle}>Members by Country</Text>
-        {reportData.membersByCountry.slice(0, 8).map((item, i) => (
-          <View key={i} style={styles.reportRow}>
-            <Text style={styles.reportLabel}>{item.country}</Text>
-            <View style={[styles.reportBar, { width: `${Math.min(100, (item.count / Math.max(...reportData.membersByCountry.map(c => c.count))) * 100)}%` }]} />
-            <Text style={styles.reportValue}>{item.count}</Text>
-          </View>
-        ))}
-
-        <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Members by Industry</Text>
-        {reportData.membersByIndustry.slice(0, 8).map((item, i) => (
-          <View key={i} style={styles.reportRow}>
-            <Text style={styles.reportLabel}>{item.industry}</Text>
-            <View style={[styles.reportBar, { backgroundColor: colors.accent, width: `${Math.min(100, (item.count / Math.max(...reportData.membersByIndustry.map(c => c.count))) * 100)}%` }]} />
-            <Text style={styles.reportValue}>{item.count}</Text>
-          </View>
-        ))}
-
-        <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Monthly Growth</Text>
-        {reportData.monthlyGrowth.map((item, i) => (
-          <View key={i} style={styles.reportRow}>
-            <Text style={styles.reportLabel}>{item.month}</Text>
-            <Text style={styles.reportValue}>{item.members} members | {formatCurrency(item.revenue, 'BWP')}</Text>
-          </View>
-        ))}
-
-        <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Event Performance</Text>
-        {reportData.eventPerformance.map((item, i) => (
-          <View key={i} style={styles.eventPerfCard}>
-            <Text style={styles.memberName}>{item.title}</Text>
-            <Text style={styles.memberSub}>{item.city}, {item.country}</Text>
-            <View style={{ flexDirection: 'row', gap: 16, marginTop: 4 }}>
-              <Text style={styles.memberSub}>RSVPs: {item.rsvpCount}</Text>
-              <Text style={styles.memberSub}>Attending: {item.attendingCount}</Text>
-              <Text style={[styles.memberSub, { color: colors.primary }]}>Fill: {item.fillRate}%</Text>
-            </View>
-            {item.revenue > 0 && <Text style={[styles.memberSub, { color: colors.success }]}>Revenue: {formatCurrency(item.revenue, 'BWP')}</Text>}
-          </View>
-        ))}
-
-        <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>RSVP Conversion</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}><Text style={styles.statValue}>{reportData.rsvpConversion.total}</Text><Text style={styles.statLabel}>Total</Text></View>
-          <View style={styles.statCard}><Text style={[styles.statValue, { color: colors.success }]}>{reportData.rsvpConversion.attending}</Text><Text style={styles.statLabel}>Attending</Text></View>
-          <View style={styles.statCard}><Text style={[styles.statValue, { color: colors.error }]}>{reportData.rsvpConversion.cancelled}</Text><Text style={styles.statLabel}>Cancelled</Text></View>
-          <View style={styles.statCard}><Text style={[styles.statValue, { color: colors.warning }]}>{reportData.rsvpConversion.waitlist}</Text><Text style={styles.statLabel}>Waitlist</Text></View>
-        </View>
-
-        <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Recent Members</Text>
-        {reportData.recentMembers.map((item, i) => (
-          <View key={i} style={styles.reportRow}>
-            <Text style={styles.reportLabel}>{item.name}</Text>
-            <Text style={styles.reportValue}>{formatDate(item.joinedAt)}</Text>
-          </View>
-        ))}
-      </>
-    ) : <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />}
-  </ScrollView>
+  <AdminReportsPanel
+    styles={styles}
+    colors={colors}
+    formatCurrency={formatCurrency}
+    formatDate={formatDate}
+    reportData={reportData}
+  />
 );
 
 // ─── TAB: CRM ───
@@ -1818,6 +1513,7 @@ const renderMemberFormModal = (visible: boolean, onClose: () => void, onSubmit: 
           {renderInput('Website URL', newWebsite, setNewWebsite)}
           {renderInput('Achievements', newAchievements, setNewAchievements, { multiline: true })}
           {renderInput('Current Projects', newCurrentProjects, setNewCurrentProjects, { multiline: true })}
+          {renderInput('Future Projects', newFutureProjects, setNewFutureProjects, { multiline: true })}
           <TouchableOpacity style={styles.primaryBtn} onPress={onSubmit}>
             <Text style={styles.primaryBtnText}>{title}</Text>
           </TouchableOpacity>
@@ -1828,137 +1524,55 @@ const renderMemberFormModal = (visible: boolean, onClose: () => void, onSubmit: 
   </Modal>
 );
 
-const renderEventFormModal = (visible: boolean, onClose: () => void, onSubmit: () => void, title: string) => {
-  const isEditing = title === 'Update Event';
-  return (
-  <Modal visible={visible} animationType="slide" transparent>
-    <View style={styles.modalOverlay}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>{title}</Text>
-          <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={colors.text} /></TouchableOpacity>
-        </View>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {renderInput('Title *', evtTitle, setEvtTitle)}
-          {renderInput('Description', evtDesc, setEvtDesc, { multiline: true })}
-          {renderInput('City *', evtCity, setEvtCity)}
-          {renderInput('Country *', evtCountry, setEvtCountry)}
-          {renderInput('Venue *', evtVenue, setEvtVenue)}
-          {renderInput('Capacity', evtCapacity, setEvtCapacity, { keyboardType: 'numeric' })}
-          {renderInput('Ticket Price', evtPrice, setEvtPrice, { keyboardType: 'numeric' })}
-          {renderChipPicker('Currency', ['BWP', 'USD', 'ZAR', 'KES', 'NGN'], evtCurrency, setEvtCurrency)}
-          <Text style={[styles.subSectionTitle, { marginTop: 16 }]}>Sponsors</Text>
-          {evtSponsors.map((s, i) => (
-            <View key={i} style={styles.reportRow}>
-              <Text style={styles.reportLabel}>{s.name} ({s.tier})</Text>
-              <TouchableOpacity onPress={() => setEvtSponsors(evtSponsors.filter((_, idx) => idx !== i))}>
-                <Ionicons name="close-circle" size={20} color={colors.error} />
-              </TouchableOpacity>
-            </View>
-          ))}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={sponsorName}
-              onChangeText={setSponsorName}
-              placeholder="Sponsor name"
-              placeholderTextColor={colors.textMuted}
-            />
-            <TouchableOpacity
-              style={[styles.addBtn, { alignSelf: 'center' }]}
-              onPress={() => {
-                if (!sponsorName.trim()) {
-                  Alert.alert('Required', 'Please enter a sponsor name first');
-                  return;
-                }
-                setEvtSponsors([...evtSponsors, { name: sponsorName.trim(), tier: sponsorTier, website: sponsorWebsite.trim() || undefined }]);
-                setSponsorName(''); setSponsorWebsite('');
-              }}
-            >
-              <Ionicons name="add" size={18} color={colors.white} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Guest Speakers section - only in edit mode with a selected event */}
-          {isEditing && selectedEvent && (
-            <>
-              <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Guest Speakers ({selectedEvent.guestSpeakers?.length || 0})</Text>
-              {(selectedEvent.guestSpeakers || []).map((speaker: any, i: number) => (
-                <View key={i} style={[styles.memberCard, { marginBottom: 6 }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.memberName}>{speaker.name}</Text>
-                    {speaker.designation && <Text style={styles.memberSub}>{speaker.designation}{speaker.company ? ` at ${speaker.company}` : ''}</Text>}
-                    {speaker.email && <Text style={styles.memberSub}>{speaker.email}</Text>}
-                    {speaker.phone && <Text style={styles.memberSub}>{speaker.phone}</Text>}
-                    <View style={[styles.statusBadge, { backgroundColor: speaker.status === 'confirmed' ? colors.success + '30' : colors.warning + '30' }]}>
-                      <Text style={[styles.statusText, { color: speaker.status === 'confirmed' ? colors.success : colors.warning }]}>{speaker.status}</Text>
-                    </View>
-                  </View>
-                  <View style={{ gap: 6 }}>
-                    <TouchableOpacity onPress={() => { onClose(); setTimeout(() => { openEditSpeaker(speaker, i); }, 300); }}>
-                      <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleRemoveSpeaker(i, speaker.name)}>
-                      <Ionicons name="trash-outline" size={20} color={colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-              <TouchableOpacity
-                style={[styles.addBtn, { width: '100%', flexDirection: 'row', gap: 6, marginTop: 8 }]}
-                onPress={() => { onClose(); setTimeout(() => { clearSpeakerForm(); setShowAddSpeaker(true); }, 300); }}
-              >
-                <Ionicons name="add" size={18} color={colors.white} />
-                <Text style={{ color: colors.white, fontWeight: '600', fontSize: fontSize.sm }}>Add Speaker</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Invited Guests section - only in edit mode with a selected event */}
-          {isEditing && selectedEvent && (
-            <>
-              <Text style={[styles.subSectionTitle, { marginTop: 24 }]}>Invited Guests ({selectedEvent.invitedGuests?.length || 0})</Text>
-              {(selectedEvent.invitedGuests || []).map((guest: any, i: number) => (
-                <View key={i} style={[styles.memberCard, { marginBottom: 6 }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.memberName}>{guest.name}</Text>
-                    {guest.designation && <Text style={styles.memberSub}>{guest.designation}{guest.company ? ` at ${guest.company}` : ''}</Text>}
-                    {guest.email && <Text style={styles.memberSub}>{guest.email}</Text>}
-                    {guest.phone && <Text style={styles.memberSub}>{guest.phone}</Text>}
-                    <View style={[styles.statusBadge, { backgroundColor: guest.status === 'confirmed' ? colors.success + '30' : colors.warning + '30' }]}>
-                      <Text style={[styles.statusText, { color: guest.status === 'confirmed' ? colors.success : colors.warning }]}>{guest.status}</Text>
-                    </View>
-                  </View>
-                  <View style={{ gap: 6 }}>
-                    <TouchableOpacity onPress={() => { onClose(); setTimeout(() => { openEditInvGuest(guest, i); }, 300); }}>
-                      <Ionicons name="create-outline" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleRemoveInvGuest(i, guest.name)}>
-                      <Ionicons name="trash-outline" size={20} color={colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-              <TouchableOpacity
-                style={[styles.addBtn, { width: '100%', flexDirection: 'row', gap: 6, marginTop: 8 }]}
-                onPress={() => { onClose(); setTimeout(() => { clearInvGuestForm(); setShowAddInvitedGuest(true); }, 300); }}
-              >
-                <Ionicons name="add" size={18} color={colors.white} />
-                <Text style={{ color: colors.white, fontWeight: '600', fontSize: fontSize.sm }}>Add Invited Guest</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          <TouchableOpacity style={[styles.primaryBtn, { marginTop: 20 }]} onPress={onSubmit}>
-            <Text style={styles.primaryBtnText}>{title}</Text>
-          </TouchableOpacity>
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
-  </Modal>
-  );
-};
+const renderEventFormModal = (visible: boolean, onClose: () => void, onSubmit: () => void, title: string) => (
+  <AdminEventFormModal
+    visible={visible}
+    onClose={onClose}
+    onSubmit={onSubmit}
+    title={title}
+    styles={styles}
+    colors={colors}
+    fontSize={fontSize}
+    evtTitle={evtTitle}
+    setEvtTitle={setEvtTitle}
+    evtDesc={evtDesc}
+    setEvtDesc={setEvtDesc}
+    evtDate={evtDate}
+    setEvtDate={setEvtDate}
+    showDatePicker={showDatePicker}
+    setShowDatePicker={setShowDatePicker}
+    evtCity={evtCity}
+    setEvtCity={setEvtCity}
+    evtCountry={evtCountry}
+    setEvtCountry={setEvtCountry}
+    evtVenue={evtVenue}
+    setEvtVenue={setEvtVenue}
+    evtCapacity={evtCapacity}
+    setEvtCapacity={setEvtCapacity}
+    evtPrice={evtPrice}
+    setEvtPrice={setEvtPrice}
+    evtCurrency={evtCurrency}
+    setEvtCurrency={setEvtCurrency}
+    evtSponsors={evtSponsors}
+    setEvtSponsors={setEvtSponsors}
+    sponsorName={sponsorName}
+    setSponsorName={setSponsorName}
+    sponsorTier={sponsorTier}
+    sponsorWebsite={sponsorWebsite}
+    setSponsorWebsite={setSponsorWebsite}
+    selectedEvent={selectedEvent}
+    renderInput={renderInput}
+    renderChipPicker={renderChipPicker}
+    clearSpeakerForm={clearSpeakerForm}
+    setShowAddSpeaker={setShowAddSpeaker}
+    openEditSpeaker={openEditSpeaker}
+    handleRemoveSpeaker={handleRemoveSpeaker}
+    clearInvGuestForm={clearInvGuestForm}
+    setShowAddInvitedGuest={setShowAddInvitedGuest}
+    openEditInvGuest={openEditInvGuest}
+    handleRemoveInvGuest={handleRemoveInvGuest}
+  />
+);
 
 // ─── MAIN RENDER ───
 const styles = StyleSheet.create({
@@ -1978,7 +1592,7 @@ const styles = StyleSheet.create({
   statValue: { fontSize: fontSize.xl, fontWeight: '700', color: colors.text },
   statLabel: { fontSize: fontSize.xs, color: colors.textSecondary },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: 12, height: 44 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: 12, height: 44, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
   searchInput: { flex: 1, color: colors.text, marginLeft: 8, fontSize: fontSize.md },
   addBtn: { backgroundColor: colors.primary, width: 40, height: 40, borderRadius: borderRadius.md, alignItems: 'center', justifyContent: 'center' },
   subTabRow: { flexDirection: 'row', marginBottom: 12, gap: 8 },
@@ -2014,17 +1628,19 @@ const styles = StyleSheet.create({
   exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, height: 40, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.primary + '15' },
   exportBtnText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
   categoryIconContainer: { width: 40, height: 40, borderRadius: borderRadius.full, alignItems: 'center', justifyContent: 'center' },
-  importMethodBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: borderRadius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginRight: 8 },
-  importMethodText: { fontSize: fontSize.sm, color: colors.textSecondary },
+  importMethodBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderRadius: borderRadius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginRight: 8 },
+  importMethodText: { fontSize: fontSize.md, color: colors.textSecondary, fontWeight: '500' },
   importMethodTextActive: { color: colors.white, fontWeight: '600' },
 });
 const tabs: { key: AdminTab; label: string; icon: string }[] = [
   { key: 'overview', label: 'Home', icon: 'grid' },
   { key: 'members', label: 'Members', icon: 'people' },
   { key: 'events', label: 'Events', icon: 'calendar' },
+  { key: 'conferences', label: 'Conferences', icon: 'business' },
   { key: 'payments', label: 'Pay', icon: 'cash' },
   { key: 'reports', label: 'Reports', icon: 'bar-chart' },
   { key: 'crm', label: 'CRM', icon: 'chatbubbles' },
+  { key: 'sms', label: 'SMS', icon: 'chatbox-ellipses' },
 ];
 
 return (
@@ -2056,9 +1672,11 @@ return (
     {activeTab === 'overview' && renderOverview()}
     {activeTab === 'members' && renderMembers()}
     {activeTab === 'events' && renderEvents()}
+    {activeTab === 'conferences' && <ConferenceAdminScreen />}
     {activeTab === 'payments' && renderPayments()}
     {activeTab === 'reports' && renderReports()}
     {activeTab === 'crm' && renderCRM()}
+    {activeTab === 'sms' && renderSMS()}
 
     {/* Modals */}
     {renderMemberFormModal(showAddMember, () => setShowAddMember(false), handleAddMember, 'Add Member')}
@@ -2257,6 +1875,7 @@ return (
                       <Text style={styles.memberName}>{item.name}</Text>
                       {item.designation && <Text style={styles.memberSub}>{item.designation}{item.company ? ` at ${item.company}` : ''}</Text>}
                       {item.email && <Text style={styles.memberSub}>{item.email}</Text>}
+                      {item.phone && <Text style={styles.memberSub}>{item.phone}</Text>}
                       <View style={[styles.statusBadge, { backgroundColor: item.status === 'confirmed' ? colors.success + '30' : colors.warning + '30' }]}>
                         <Text style={[styles.statusText, { color: item.status === 'confirmed' ? colors.success : colors.warning }]}>{item.status}</Text>
                       </View>
@@ -2296,6 +1915,7 @@ return (
                       <Text style={styles.memberName}>{item.name}</Text>
                       {item.designation && <Text style={styles.memberSub}>{item.designation}{item.company ? ` at ${item.company}` : ''}</Text>}
                       {item.email && <Text style={styles.memberSub}>{item.email}</Text>}
+                      {item.phone && <Text style={styles.memberSub}>{item.phone}</Text>}
                       <View style={[styles.statusBadge, { backgroundColor: item.status === 'confirmed' ? colors.success + '30' : colors.warning + '30' }]}>
                         <Text style={[styles.statusText, { color: item.status === 'confirmed' ? colors.success : colors.warning }]}>{item.status}</Text>
                       </View>
@@ -2328,7 +1948,7 @@ return (
               </View>
               <FlatList
                 data={[
-                  ...(selectedEvent?.paidGuests || []).map((g: any, i: number) => ({ ...g, _source: 'manual', _index: i, key: 'paid-' + i })),
+                  ...(selectedEvent?.paidGuests || []).map((g: any, i: number) => ({ ...g, _source: 'manual', _index: i, key: 'paid-' + i, })),
                   ...(eventRsvps || []).filter((r: any) => r.paymentStatus === 'paid').map((r: any) => ({ name: r.userName || 'Unknown', email: r.userEmail, company: r.userCompany, phone: r.userPhone, _source: 'rsvp', key: 'rsvp-' + r._id })),
                 ]}
                 keyExtractor={(item: any) => item.key}
@@ -2734,13 +2354,25 @@ return (
               </View>
             )}
 
+            {importProgress ? (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 20 }}>
+                <Text style={{ color: colors.white, fontSize: 14, marginBottom: 8, textAlign: 'center' }}>
+                  Importing {importProgress.current} of {importProgress.total}...
+                </Text>
+                <View style={{ height: 8, backgroundColor: colors.surface, borderRadius: 4, overflow: 'hidden' }}>
+                  <View style={{ height: 8, backgroundColor: colors.primary, borderRadius: 4, width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }} />
+                </View>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 6, textAlign: 'center' }}>
+                  Added: {importProgress.added} | Skipped: {importProgress.skipped}
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleConfirmImport}>
+                <Text style={styles.primaryBtnText}>Import {importedRows.length} Members</Text>
+              </TouchableOpacity>
+            )}
             <View style={{ height: 20 }} />
           </ScrollView>
-
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleConfirmImport}>
-            <Text style={styles.primaryBtnText}>Import {importedRows.length} Members</Text>
-          </TouchableOpacity>
-          <View style={{ height: 20 }} />
         </View>
       </View>
     </Modal>

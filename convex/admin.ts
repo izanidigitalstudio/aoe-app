@@ -18,8 +18,7 @@ const adminMemberReturn = v.object({
   contactPhone: v.optional(v.string()),
   contactEmail: v.optional(v.string()),
   physicalAddress: v.optional(v.string()),
-  linkedIn: v.optional(v.string()),
-  twitter: v.optional(v.string()),
+  province: v.optional(v.string()),
   website: v.optional(v.string()),
   achievements: v.optional(v.string()),
   currentProjects: v.optional(v.string()),
@@ -57,6 +56,8 @@ export const listAllMembers = query({
           (m.email && m.email.toLowerCase().includes(s)) ||
           (m.company && m.company.toLowerCase().includes(s)) ||
           (m.country && m.country.toLowerCase().includes(s)) ||
+          (m.city && m.city.toLowerCase().includes(s)) ||
+          (m.role && m.role.toLowerCase().includes(s)) ||
           (m.industry && m.industry.toLowerCase().includes(s))
       );
     }
@@ -74,8 +75,7 @@ export const listAllMembers = query({
       contactPhone: m.contactPhone,
       contactEmail: m.contactEmail,
       physicalAddress: m.physicalAddress,
-      linkedIn: m.linkedIn,
-      twitter: m.twitter,
+      province: m.province,
       website: m.website,
       achievements: m.achievements,
       currentProjects: m.currentProjects,
@@ -109,9 +109,28 @@ export const getMemberIndustryCounts = query({
   },
 });
 
+export const getMemberTypeCounts = query({
+  args: {},
+  returns: v.array(v.object({ memberType: v.string(), count: v.number() })),
+  handler: async (ctx) => {
+    const members = await ctx.db.query("users").collect();
+    const counts: Record<string, number> = {};
+    for (const m of members) {
+      const mt = (m as any).memberType;
+      if (mt) {
+        counts[mt] = (counts[mt] || 0) + 1;
+      }
+    }
+    return Object.entries(counts)
+      .map(([memberType, count]) => ({ memberType, count }))
+      .sort((a, b) => b.count - a.count);
+  },
+});
+
 export const addMember = mutation({
   args: {
     name: v.string(),
+    surname: v.optional(v.string()),
     email: v.string(),
     company: v.optional(v.string()),
     role: v.optional(v.string()),
@@ -120,10 +139,10 @@ export const addMember = mutation({
     city: v.optional(v.string()),
     bio: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
+    mobileNumber: v.optional(v.string()),
     contactEmail: v.optional(v.string()),
     physicalAddress: v.optional(v.string()),
-    linkedIn: v.optional(v.string()),
-    twitter: v.optional(v.string()),
+    province: v.optional(v.string()),
     website: v.optional(v.string()),
     achievements: v.optional(v.string()),
     currentProjects: v.optional(v.string()),
@@ -141,11 +160,28 @@ export const addMember = mutation({
   },
 });
 
+export const getExistingEmails = query({
+  args: { emails: v.array(v.string()) },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const existing: string[] = [];
+    for (const email of args.emails) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("email", (q: any) => q.eq("email", email))
+        .first();
+      if (user) existing.push(email);
+    }
+    return existing;
+  },
+});
+
 export const bulkAddMembers = mutation({
   args: {
     members: v.array(
       v.object({
         name: v.string(),
+        surname: v.optional(v.string()),
         email: v.string(),
         company: v.optional(v.string()),
         role: v.optional(v.string()),
@@ -153,8 +189,10 @@ export const bulkAddMembers = mutation({
         country: v.optional(v.string()),
         city: v.optional(v.string()),
         contactPhone: v.optional(v.string()),
+        mobileNumber: v.optional(v.string()),
         contactEmail: v.optional(v.string()),
         physicalAddress: v.optional(v.string()),
+        province: v.optional(v.string()),
         website: v.optional(v.string()),
         bio: v.optional(v.string()),
         linkedIn: v.optional(v.string()),
@@ -174,7 +212,7 @@ export const bulkAddMembers = mutation({
       const existing = await ctx.db
         .query("users")
         .withIndex("email", (q: any) => q.eq("email", member.email))
-        .unique();
+        .first();
       if (existing) {
         skipped++;
         continue;
@@ -209,7 +247,7 @@ export const bulkUpdateMembers = mutation({
       const member = await ctx.db
         .query("users")
         .withIndex("email", (q: any) => q.eq("email", item.email))
-        .unique();
+        .first();
       if (!member) {
         notFound++;
         continue;
@@ -237,10 +275,10 @@ export const updateMember = mutation({
     city: v.optional(v.string()),
     bio: v.optional(v.string()),
     contactPhone: v.optional(v.string()),
+    mobileNumber: v.optional(v.string()),
     contactEmail: v.optional(v.string()),
     physicalAddress: v.optional(v.string()),
-    linkedIn: v.optional(v.string()),
-    twitter: v.optional(v.string()),
+    province: v.optional(v.string()),
     website: v.optional(v.string()),
     achievements: v.optional(v.string()),
     currentProjects: v.optional(v.string()),
@@ -1129,5 +1167,97 @@ export const getReportData = query({
       monthlyGrowth,
       rsvpConversion,
     };
+  },
+});
+
+// ─── BULK SMS ───
+
+export const getMembersWithPhones = query({
+  args: {
+    memberType: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    country: v.optional(v.string()),
+  },
+  returns: v.array(v.object({
+    _id: v.id("users"),
+    name: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    memberType: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    country: v.optional(v.string()),
+    company: v.optional(v.string()),
+  })),
+  handler: async (ctx, args) => {
+    let members;
+    if (args.memberType) {
+      members = await ctx.db.query("users").withIndex("by_member_type", (q: any) => q.eq("memberType", args.memberType)).take(8000);
+    } else {
+      members = await ctx.db.query("users").take(8000);
+    }
+    // Filter by industry/country if specified
+    if (args.industry) {
+      members = members.filter((m: any) => m.industry === args.industry);
+    }
+    if (args.country) {
+      members = members.filter((m: any) => m.country === args.country);
+    }
+    // Only return members with a phone number
+    return members
+      .filter((m: any) => m.contactPhone || m.mobileNumber || m.phone)
+      .map((m: any) => ({
+        _id: m._id,
+        name: m.name,
+        phone: m.contactPhone || m.mobileNumber || m.phone,
+        memberType: m.memberType,
+        industry: m.industry,
+        country: m.country,
+        company: m.company,
+      }));
+  },
+});
+
+export const logBulkSms = mutation({
+  args: {
+    message: v.string(),
+    recipientCount: v.number(),
+    targetType: v.string(),
+    targetLabel: v.string(),
+  },
+  returns: v.id("bulkSmsLogs"),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const id = await ctx.db.insert("bulkSmsLogs", {
+      message: args.message,
+      recipientCount: args.recipientCount,
+      targetType: args.targetType,
+      targetLabel: args.targetLabel,
+      sentBy: identity?.email ?? "admin",
+    });
+    return id;
+  },
+});
+
+export const listBulkSmsLogs = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("bulkSmsLogs"),
+    message: v.string(),
+    recipientCount: v.number(),
+    targetType: v.string(),
+    targetLabel: v.string(),
+    sentBy: v.optional(v.string()),
+    _creationTime: v.number(),
+  })),
+  handler: async (ctx) => {
+    const logs = await ctx.db.query("bulkSmsLogs").order("desc").take(50);
+    return logs.map((l: any) => ({
+      _id: l._id,
+      message: l.message,
+      recipientCount: l.recipientCount,
+      targetType: l.targetType,
+      targetLabel: l.targetLabel,
+      sentBy: l.sentBy,
+      _creationTime: l._creationTime,
+    }));
   },
 });

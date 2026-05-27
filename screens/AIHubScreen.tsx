@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
-View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput,
-FlatList, Linking, Dimensions, SectionList, ActivityIndicator, Image,
-Alert, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput,
+  FlatList, Linking, Dimensions, SectionList, ActivityIndicator, Image,
+  Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,278 +14,306 @@ import { AFRICAN_VCS, Funder } from '../data/africanVCs';
 import { AI_TOOLS, AITool } from '../data/aiTools';
 import { AI_GUIDES, Guide } from '../data/aiGuides';
 import { CASE_STUDIES, CaseStudy } from '../data/caseStudies';
-import { CONFERENCES, ProcessedConference, COUNTRIES } from '../data/conferences';
 import { SA_PODCASTS, Podcast, PODCAST_CATEGORIES } from '../data/podcasts';
 import { AI_NEWS, AINewsArticle, AI_NEWS_CATEGORIES } from '../data/aiNews';
 import { SETAS, SETA } from '../data/setas';
 import { STATE_AGENCIES, StateAgency } from '../data/stateAgencies';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { api } from '../lib/convexApi';
 const { width } = Dimensions.get('window');
-const COMPACT_HUB_BREAKPOINT = 640;
 
 type HubTab = 'funders' | 'tools' | 'guides' | 'cases' | 'conferences' | 'podcasts' | 'news' | 'setas' | 'stateAgencies';
-type HubContentProps = {
-  onContentScroll?: (event: any) => void;
-  compactFiltersCollapsed?: boolean;
-  isCompactScreen?: boolean;
-  onExpandFilters?: () => void;
+
+type ConferenceItem = {
+  _id?: string;
+  name: string;
+  date: string;
+  country: string;
+  location: string;
+  focus: string;
+  icon: string;
+  description: string;
+  website: string;
+  attendees: string;
+  passed?: boolean;
+  isLive?: boolean;
+  originalDate?: string;
+  contactEmail?: string;
+  speakerEmail?: string;
+  speakerContact?: string;
+  delegateInfo?: {
+    delegateFee?: string;
+    earlyBirdDeadline?: string;
+    delegateTypes?: string[];
+    includes?: string[];
+  };
 };
 
-function CompactFilterButton({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress?: () => void;
-}) {
+const MAY_2026_CUTOFF = new Date(2026, 4, 1).getTime();
+
+function parseConferenceStartTime(dateStr: string): number {
+  const monthMap: Record<string, number> = {
+    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+  };
+
+  if (dateStr.startsWith('TBA')) return Number.MAX_SAFE_INTEGER;
+
+  const rangeMatch = dateStr.match(/^([A-Za-z]+)\s+(\d+)-(\d+),\s*(\d{4})$/);
+  if (rangeMatch && monthMap[rangeMatch[1]] !== undefined) {
+    return new Date(parseInt(rangeMatch[4]), monthMap[rangeMatch[1]], parseInt(rangeMatch[2])).getTime();
+  }
+
+  const crossMonth = dateStr.match(/^([A-Za-z]+)\s+(\d+)\s*-\s*([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (crossMonth && monthMap[crossMonth[1]] !== undefined) {
+    return new Date(parseInt(crossMonth[5]), monthMap[crossMonth[1]], parseInt(crossMonth[2])).getTime();
+  }
+
+  const monthOnly = dateStr.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monthOnly && monthMap[monthOnly[1]] !== undefined) {
+    return new Date(parseInt(monthOnly[2]), monthMap[monthOnly[1]], 1).getTime();
+  }
+
+  const singleDay = dateStr.match(/^([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (singleDay && monthMap[singleDay[1]] !== undefined) {
+    return new Date(parseInt(singleDay[3]), monthMap[singleDay[1]], parseInt(singleDay[2])).getTime();
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function sortConferencesAscending(conferences: ConferenceItem[]): ConferenceItem[] {
+  return conferences.slice().sort((a, b) => {
+    const diff = parseConferenceStartTime(a.date) - parseConferenceStartTime(b.date);
+    if (diff !== 0) return diff;
+    return String(a._id || a.name).localeCompare(String(b._id || b.name));
+  });
+}
+
+function isUpcomingConference(conference: ConferenceItem): boolean {
+  return parseConferenceStartTime(conference.date) >= MAY_2026_CUTOFF;
+}
+
+// ==================== FUNDERS VIEW ====================
+function FundersView() {
+  const [search, setSearch] = useState('');
+  const [selectedFunder, setSelectedFunder] = useState<Funder | null>(null);
+  const [filterCountry, setFilterCountry] = useState('All');
+  const countries = ['All', ...Array.from(new Set(AFRICAN_VCS.map(f => f.country))).sort()];
+  const filtered = AFRICAN_VCS.filter(f => {
+    const ms = !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.firm.toLowerCase().includes(search.toLowerCase()) || f.focus.toLowerCase().includes(search.toLowerCase());
+    const mc = filterCountry === 'All' || f.country === filterCountry;
+    return ms && mc;
+  });
   return (
-    <View style={styles.compactFilterWrap}>
-      <TouchableOpacity style={styles.compactFilterButton} onPress={onPress} activeOpacity={0.8}>
-        <Ionicons name="options-outline" size={16} color={colors.primary} />
-        <Text style={styles.compactFilterText} numberOfLines={1}>{label}</Text>
-        <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
-      </TouchableOpacity>
+    <View style={{ flex: 1 }}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput style={styles.searchInput} placeholder="Search funders, firms, or focus areas..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
+        {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
+        {countries.map((c: any) => (
+          <TouchableOpacity key={c} style={[styles.filterChip, filterCountry === c && styles.filterChipActive]} onPress={() => setFilterCountry(c)}>
+            <Text style={[styles.filterChipText, filterCountry === c && styles.filterChipTextActive]}>{c}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <Text style={styles.resultCount}>{filtered.length} funders found</Text>
+      <FlatList
+        data={filtered}
+        keyExtractor={(item: any, i: number) => `${item.firm}-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        renderItem={({ item, index }: { item: any; index: number }) => (
+          <TouchableOpacity style={styles.funderCard} onPress={() => setSelectedFunder(item)}>
+            <View style={styles.funderRank}><Text style={styles.funderRankText}>{index + 1}</Text></View>
+            <View style={styles.funderInfo}>
+              <Text style={styles.funderName}>{item.name}</Text>
+              <Text style={styles.funderFirm}>{item.firm}</Text>
+              <View style={styles.funderMeta}>
+                <View style={styles.funderTag}><Ionicons name="location" size={10} color={colors.primary} /><Text style={styles.funderTagText}>{item.country}</Text></View>
+                <View style={styles.funderTag}><Ionicons name="trending-up" size={10} color={colors.accentLight} /><Text style={[styles.funderTagText, { color: colors.accentLight }]}>{item.stage}</Text></View>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedFunder} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedFunder(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Funder Profile</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <View style={styles.funderDetailTop}>
+              <View style={styles.funderAvatar}><Text style={styles.funderAvatarText}>{selectedFunder?.name.charAt(0)}</Text></View>
+              <Text style={styles.funderDetailName}>{selectedFunder?.name}</Text>
+              <Text style={styles.funderDetailFirm}>{selectedFunder?.firm}</Text>
+              <View style={[styles.funderTag, { alignSelf: 'center', marginTop: spacing.sm }]}><Ionicons name="location" size={12} color={colors.primary} /><Text style={styles.funderTagText}>{selectedFunder?.country}</Text></View>
+            </View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>About</Text><Text style={styles.detailText}>{selectedFunder?.description}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Investment Focus</Text><Text style={styles.detailText}>{selectedFunder?.focus}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Stage</Text><View style={styles.stagePill}><Ionicons name="trending-up" size={14} color={colors.primary} /><Text style={styles.stagePillText}>{selectedFunder?.stage}</Text></View></View>
+            <View style={styles.detailSection}>
+              <Text style={styles.detailLabel}>Contact</Text>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedFunder?.email}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedFunder?.email}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedFunder?.website}`)}><Ionicons name="globe" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedFunder?.website}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedFunder?.linkedin}`)}><Ionicons name="logo-linkedin" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedFunder?.linkedin}</Text></TouchableOpacity>
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
     </View>
   );
 }
 
-// ==================== FUNDERS VIEW ====================
-function FundersView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
-const [search, setSearch] = useState('');
-const [selectedFunder, setSelectedFunder] = useState<Funder | null>(null);
-const [filterCountry, setFilterCountry] = useState('All');
-const countries = ['All', ...Array.from(new Set(AFRICAN_VCS.map(f => f.country))).sort()];
-const filtered = AFRICAN_VCS.filter(f => {
-const ms = !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.firm.toLowerCase().includes(search.toLowerCase()) || f.focus.toLowerCase().includes(search.toLowerCase());
-const mc = filterCountry === 'All' || f.country === filterCountry;
-return ms && mc;
-});
-return (
-<View style={{ flex: 1 }}>
-<View style={styles.searchBar}>
-<Ionicons name="search" size={18} color={colors.textMuted} />
-<TextInput style={styles.searchInput} placeholder="Search funders, firms, or focus areas..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
-{search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
-</View>
-{isCompactScreen && compactFiltersCollapsed ? (
-<CompactFilterButton label={filterCountry === 'All' ? 'All countries' : filterCountry} onPress={onExpandFilters} />
-) : (
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
-{countries.map((c: any) => (
-<TouchableOpacity key={c} style={[styles.filterChip, filterCountry === c && styles.filterChipActive]} onPress={() => setFilterCountry(c)}>
-<Text style={[styles.filterChipText, filterCountry === c && styles.filterChipTextActive]}>{c}</Text>
-</TouchableOpacity>
-))}
-</ScrollView>
-)}
-<Text style={styles.resultCount}>{filtered.length} funders found</Text>
-<FlatList
-data={filtered}
-keyExtractor={(item: any, i: number) => `${item.firm}-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item, index }: { item: any; index: number }) => (
-<TouchableOpacity style={styles.funderCard} onPress={() => setSelectedFunder(item)}>
-<View style={styles.funderRank}><Text style={styles.funderRankText}>{index + 1}</Text></View>
-<View style={styles.funderInfo}>
-<Text style={styles.funderName}>{item.name}</Text>
-<Text style={styles.funderFirm}>{item.firm}</Text>
-<View style={styles.funderMeta}>
-<View style={styles.funderTag}><Ionicons name="location" size={10} color={colors.primary} /><Text style={styles.funderTagText}>{item.country}</Text></View>
-<View style={styles.funderTag}><Ionicons name="trending-up" size={10} color={colors.accentLight} /><Text style={[styles.funderTagText, { color: colors.accentLight }]}>{item.stage}</Text></View>
-</View>
-</View>
-<Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedFunder} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedFunder(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>Funder Profile</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<View style={styles.funderDetailTop}>
-<View style={styles.funderAvatar}><Text style={styles.funderAvatarText}>{selectedFunder?.name.charAt(0)}</Text></View>
-<Text style={styles.funderDetailName}>{selectedFunder?.name}</Text>
-<Text style={styles.funderDetailFirm}>{selectedFunder?.firm}</Text>
-<View style={[styles.funderTag, { alignSelf: 'center', marginTop: spacing.sm }]}><Ionicons name="location" size={12} color={colors.primary} /><Text style={styles.funderTagText}>{selectedFunder?.country}</Text></View>
-</View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>About</Text><Text style={styles.detailText}>{selectedFunder?.description}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Investment Focus</Text><Text style={styles.detailText}>{selectedFunder?.focus}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Stage</Text><View style={styles.stagePill}><Ionicons name="trending-up" size={14} color={colors.primary} /><Text style={styles.stagePillText}>{selectedFunder?.stage}</Text></View></View>
-<View style={styles.detailSection}>
-<Text style={styles.detailLabel}>Contact</Text>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedFunder?.email}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedFunder?.email}</Text></TouchableOpacity>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedFunder?.website}`)}><Ionicons name="globe" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedFunder?.website}</Text></TouchableOpacity>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedFunder?.linkedin}`)}><Ionicons name="logo-linkedin" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedFunder?.linkedin}</Text></TouchableOpacity>
-</View>
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
-}
-
 // ==================== AI TOOLS VIEW ====================
-function ToolsView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
-const [selectedTool, setSelectedTool] = useState<AITool | null>(null);
-const [filterCat, setFilterCat] = useState('All');
-const categories = ['All', ...Array.from(new Set(AI_TOOLS.map(t => t.category))).sort()];
-const filtered = AI_TOOLS.filter(t => filterCat === 'All' || t.category === filterCat);
-return (
-<View style={{ flex: 1 }}>
-{isCompactScreen && compactFiltersCollapsed ? (
-<CompactFilterButton label={filterCat === 'All' ? 'All AI tools' : filterCat} onPress={onExpandFilters} />
-) : (
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
-{categories.map((c: any) => (
-<TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
-<Text style={[styles.filterChipText, filterCat === c && styles.filterChipTextActive]}>{c}</Text>
-</TouchableOpacity>
-))}
-</ScrollView>
-)}
-<FlatList data={filtered} keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.toolCard} onPress={() => setSelectedTool(item)}>
-<View style={styles.toolHeader}>
-<View style={styles.toolIcon}><Ionicons name="construct" size={20} color={colors.primary} /></View>
-<View style={{ flex: 1 }}><Text style={styles.toolName}>{item.name}</Text><Text style={styles.toolCategory}>{item.category}</Text></View>
-<View style={styles.priceBadge}><Text style={styles.priceText}>{item.pricing.includes('Free') ? 'Free' : 'Paid'}</Text></View>
-</View>
-<Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text>
-<View style={styles.featureRow}>
-{item.features.slice(0, 3).map((f: any) => (<View key={f} style={styles.featureChip}><Text style={styles.featureChipText}>{f}</Text></View>))}
-</View>
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedTool} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedTool(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>AI Tool</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<Text style={styles.funderDetailName}>{selectedTool?.name}</Text>
-<View style={[styles.funderTag, { alignSelf: 'flex-start', marginTop: spacing.sm }]}><Text style={styles.funderTagText}>{selectedTool?.category}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedTool?.description}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Best Use Case for African Entrepreneurs</Text><Text style={styles.detailText}>{selectedTool?.useCase}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Pricing</Text><Text style={[styles.detailText, { color: colors.primary, fontWeight: '600' }]}>{selectedTool?.pricing}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Key Features</Text>
-<View style={styles.featureList}>{selectedTool?.features.map((f: any) => (<View key={f} style={styles.featureItem}><Ionicons name="checkmark-circle" size={16} color={colors.success} /><Text style={styles.featureItemText}>{f}</Text></View>))}</View>
-</View>
-<TouchableOpacity style={styles.visitButton} onPress={() => Linking.openURL(`https://${selectedTool?.website}`)}>
-<Ionicons name="open-outline" size={18} color={colors.black} /><Text style={styles.visitButtonText}>Visit {selectedTool?.name}</Text>
-</TouchableOpacity>
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
+function ToolsView() {
+  const [selectedTool, setSelectedTool] = useState<AITool | null>(null);
+  const [filterCat, setFilterCat] = useState('All');
+  const categories = ['All', ...Array.from(new Set(AI_TOOLS.map(t => t.category))).sort()];
+  const filtered = AI_TOOLS.filter(t => filterCat === 'All' || t.category === filterCat);
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
+        {categories.map((c: any) => (
+          <TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
+            <Text style={[styles.filterChipText, filterCat === c && styles.filterChipTextActive]}>{c}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <FlatList data={filtered} keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.toolCard} onPress={() => setSelectedTool(item)}>
+            <View style={styles.toolHeader}>
+              <View style={styles.toolIcon}><Ionicons name="construct" size={20} color={colors.primary} /></View>
+              <View style={{ flex: 1 }}><Text style={styles.toolName}>{item.name}</Text><Text style={styles.toolCategory}>{item.category}</Text></View>
+              <View style={styles.priceBadge}><Text style={styles.priceText}>{item.pricing.includes('Free') ? 'Free' : 'Paid'}</Text></View>
+            </View>
+            <Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text>
+            <View style={styles.featureRow}>
+              {item.features.slice(0, 3).map((f: any) => (<View key={f} style={styles.featureChip}><Text style={styles.featureChipText}>{f}</Text></View>))}
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedTool} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedTool(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>AI Tool</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <Text style={styles.funderDetailName}>{selectedTool?.name}</Text>
+            <View style={[styles.funderTag, { alignSelf: 'flex-start', marginTop: spacing.sm }]}><Text style={styles.funderTagText}>{selectedTool?.category}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedTool?.description}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Best Use Case for African Entrepreneurs</Text><Text style={styles.detailText}>{selectedTool?.useCase}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Pricing</Text><Text style={[styles.detailText, { color: colors.primary, fontWeight: '600' }]}>{selectedTool?.pricing}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Key Features</Text>
+              <View style={styles.featureList}>{selectedTool?.features.map((f: any) => (<View key={f} style={styles.featureItem}><Ionicons name="checkmark-circle" size={16} color={colors.success} /><Text style={styles.featureItemText}>{f}</Text></View>))}</View>
+            </View>
+            <TouchableOpacity style={styles.visitButton} onPress={() => Linking.openURL(`https://${selectedTool?.website}`)}>
+              <Ionicons name="open-outline" size={18} color={colors.black} /><Text style={styles.visitButtonText}>Visit {selectedTool?.name}</Text>
+            </TouchableOpacity>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
+    </View>
+  );
 }
 
 // ==================== GUIDES VIEW ====================
-function GuidesView({ onContentScroll }: HubContentProps) {
-const [selectedGuide, setSelectedGuide] = useState<Guide | null>(null);
-return (
-<View style={{ flex: 1 }}>
-<FlatList data={AI_GUIDES} keyExtractor={(item: any, i: number) => `guide-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.guideCard} onPress={() => setSelectedGuide(item)}>
-<View style={styles.guideIcon}><Ionicons name={item.icon as any} size={28} color={colors.primary} /></View>
-<View style={styles.guideInfo}>
-<View style={styles.guideBadges}><View style={styles.levelBadge}><Text style={styles.levelBadgeText}>{item.level}</Text></View><Text style={styles.guideDuration}>{item.duration}</Text></View>
-<Text style={styles.guideTitle}>{item.title}</Text>
-<Text style={styles.guideSummary} numberOfLines={2}>{item.summary}</Text>
-</View>
-<Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedGuide} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedGuide(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>Guide</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<View style={styles.guideBadges}><View style={styles.levelBadge}><Text style={styles.levelBadgeText}>{selectedGuide?.level}</Text></View><Text style={styles.guideDuration}>{selectedGuide?.duration}</Text></View>
-<Text style={[styles.funderDetailName, { marginTop: spacing.sm }]}>{selectedGuide?.title}</Text>
-<Text style={[styles.detailText, { marginTop: spacing.sm, color: colors.primary }]}>{selectedGuide?.summary}</Text>
-{selectedGuide?.sections.map((section: any, i: number) => (
-<View key={i} style={styles.guideSection}><Text style={styles.guideSectionHeading}>{section.heading}</Text><Text style={styles.guideSectionContent}>{section.content}</Text></View>
-))}
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
+function GuidesView() {
+  const [selectedGuide, setSelectedGuide] = useState<Guide | null>(null);
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList data={AI_GUIDES} keyExtractor={(item: any, i: number) => `guide-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.guideCard} onPress={() => setSelectedGuide(item)}>
+            <View style={styles.guideIcon}><Ionicons name={item.icon as any} size={28} color={colors.primary} /></View>
+            <View style={styles.guideInfo}>
+              <View style={styles.guideBadges}><View style={styles.levelBadge}><Text style={styles.levelBadgeText}>{item.level}</Text></View><Text style={styles.guideDuration}>{item.duration}</Text></View>
+              <Text style={styles.guideTitle}>{item.title}</Text>
+              <Text style={styles.guideSummary} numberOfLines={2}>{item.summary}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedGuide} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedGuide(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Guide</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <View style={styles.guideBadges}><View style={styles.levelBadge}><Text style={styles.levelBadgeText}>{selectedGuide?.level}</Text></View><Text style={styles.guideDuration}>{selectedGuide?.duration}</Text></View>
+            <Text style={[styles.funderDetailName, { marginTop: spacing.sm }]}>{selectedGuide?.title}</Text>
+            <Text style={[styles.detailText, { marginTop: spacing.sm, color: colors.primary }]}>{selectedGuide?.summary}</Text>
+            {selectedGuide?.sections.map((section: any, i: number) => (
+              <View key={i} style={styles.guideSection}><Text style={styles.guideSectionHeading}>{section.heading}</Text><Text style={styles.guideSectionContent}>{section.content}</Text></View>
+            ))}
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
+    </View>
+  );
 }
 
 // ==================== CASE STUDIES VIEW ====================
-function CaseStudiesView({ onContentScroll }: HubContentProps) {
-const [selectedCase, setSelectedCase] = useState<CaseStudy | null>(null);
-return (
-<View style={{ flex: 1 }}>
-<FlatList data={CASE_STUDIES} keyExtractor={(item: any, i: number) => `case-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.caseCard} onPress={() => setSelectedCase(item)}>
-<View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{item.industry}</Text></View><Text style={styles.caseYear}>{item.year}</Text></View>
-<Text style={styles.caseTitle}>{item.title}</Text>
-<Text style={styles.caseCompany}>{item.company} • {item.country}</Text>
-<Text style={styles.caseChallenge} numberOfLines={2}>{item.challenge}</Text>
-<View style={styles.caseResults}>
-{item.results.slice(0, 2).map((r: any, i: number) => (<View key={i} style={styles.caseResultItem}><Ionicons name="checkmark-circle" size={14} color={colors.success} /><Text style={styles.caseResultText} numberOfLines={1}>{r}</Text></View>))}
-</View>
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedCase} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedCase(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>Case Study</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{selectedCase?.industry}</Text></View><Text style={styles.caseYear}>{selectedCase?.year}</Text></View>
-<Text style={[styles.funderDetailName, { marginTop: spacing.sm }]}>{selectedCase?.title}</Text>
-<Text style={[styles.funderDetailFirm, { marginTop: 4 }]}>{selectedCase?.company} • {selectedCase?.country}</Text>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Challenge</Text><Text style={styles.detailText}>{selectedCase?.challenge}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>AI Solution</Text><Text style={styles.detailText}>{selectedCase?.solution}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Results</Text>
-{selectedCase?.results.map((r: any, i: number) => (<View key={i} style={[styles.caseResultItem, { marginBottom: 8 }]}><Ionicons name="checkmark-circle" size={16} color={colors.success} /><Text style={[styles.caseResultText, { flex: 1 }]}>{r}</Text></View>))}
-</View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>AI Tools Used</Text>
-<View style={styles.featureRow}>{selectedCase?.aiTools.map((t: any) => (<View key={t} style={styles.featureChip}><Text style={styles.featureChipText}>{t}</Text></View>))}</View>
-</View>
-<View style={styles.quoteBox}>
-<Ionicons name="chatbubble-ellipses" size={24} color={colors.primary} style={{ marginBottom: 8 }} />
-<Text style={styles.quoteText}>"{selectedCase?.quote}"</Text>
-<Text style={styles.quoteAuthor}>— {selectedCase?.quoteAuthor}</Text>
-</View>
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
+function CaseStudiesView() {
+  const [selectedCase, setSelectedCase] = useState<CaseStudy | null>(null);
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList data={CASE_STUDIES} keyExtractor={(item: any, i: number) => `case-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.caseCard} onPress={() => setSelectedCase(item)}>
+            <View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{item.industry}</Text></View><Text style={styles.caseYear}>{item.year}</Text></View>
+            <Text style={styles.caseTitle}>{item.title}</Text>
+            <Text style={styles.caseCompany}>{item.company} • {item.country}</Text>
+            <Text style={styles.caseChallenge} numberOfLines={2}>{item.challenge}</Text>
+            <View style={styles.caseResults}>
+              {item.results.slice(0, 2).map((r: any, i: number) => (<View key={i} style={styles.caseResultItem}><Ionicons name="checkmark-circle" size={14} color={colors.success} /><Text style={styles.caseResultText} numberOfLines={1}>{r}</Text></View>))}
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedCase} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedCase(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Case Study</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{selectedCase?.industry}</Text></View><Text style={styles.caseYear}>{selectedCase?.year}</Text></View>
+            <Text style={[styles.funderDetailName, { marginTop: spacing.sm }]}>{selectedCase?.title}</Text>
+            <Text style={[styles.funderDetailFirm, { marginTop: 4 }]}>{selectedCase?.company} • {selectedCase?.country}</Text>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Challenge</Text><Text style={styles.detailText}>{selectedCase?.challenge}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>AI Solution</Text><Text style={styles.detailText}>{selectedCase?.solution}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Results</Text>
+              {selectedCase?.results.map((r: any, i: number) => (<View key={i} style={[styles.caseResultItem, { marginBottom: 8 }]}><Ionicons name="checkmark-circle" size={16} color={colors.success} /><Text style={[styles.caseResultText, { flex: 1 }]}>{r}</Text></View>))}
+            </View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>AI Tools Used</Text>
+              <View style={styles.featureRow}>{selectedCase?.aiTools.map((t: any) => (<View key={t} style={styles.featureChip}><Text style={styles.featureChipText}>{t}</Text></View>))}</View>
+            </View>
+            <View style={styles.quoteBox}>
+              <Ionicons name="chatbubble-ellipses" size={24} color={colors.primary} style={{ marginBottom: 8 }} />
+              <Text style={styles.quoteText}>"{selectedCase?.quote}"</Text>
+              <Text style={styles.quoteAuthor}>— {selectedCase?.quoteAuthor}</Text>
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
+    </View>
+  );
 }
 
 // ==================== CONFERENCES VIEW ====================
@@ -306,8 +334,8 @@ function getMonthLabel(dateStr: string): string {
   return 'Other';
 }
 
-function groupByMonth(conferences: ProcessedConference[]): { title: string; data: ProcessedConference[] }[] {
-  const groups: Record<string, ProcessedConference[]> = {};
+function groupByMonth(conferences: ConferenceItem[]): { title: string; data: ConferenceItem[] }[] {
+  const groups: Record<string, ConferenceItem[]> = {};
   conferences.forEach(c => {
     const label = c.isLive ? '🔴 Happening Now' : c.passed ? 'Returning in 2027' : getMonthLabel(c.date);
     if (!groups[label]) groups[label] = [];
@@ -331,13 +359,13 @@ const DELEGATE_TYPES = [
   { key: 'exhibitor', label: 'Exhibitor' },
 ] as const;
 
-function buildGoogleCalendarUrl(conference: ProcessedConference): string | null {
+function buildGoogleCalendarUrl(conference: ConferenceItem): string | null {
   const monthMap: Record<string, number> = {
     Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
     Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
   };
 
-  const dateStr = conference.passed ? conference.originalDate : conference.date;
+  const dateStr = conference.passed ? (conference.originalDate ?? conference.date) : conference.date;
   if (dateStr.startsWith('TBA')) return null;
 
   let startDate: Date | null = null;
@@ -380,24 +408,26 @@ function buildGoogleCalendarUrl(conference: ProcessedConference): string | null 
     return `${y}${m}${day}`;
   };
 
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: conference.name,
-    dates: `${fmt(startDate)}/${fmt(endDate)}`,
-    details: `${conference.description}\n\nFocus: ${conference.focus}\nAttendees: ${conference.attendees}\nWebsite: ${conference.website}`,
-    location: `${conference.location}, ${conference.country}`,
-  });
+  const params = [
+    ['action', 'TEMPLATE'],
+    ['text', conference.name],
+    ['dates', `${fmt(startDate)}/${fmt(endDate)}`],
+    ['details', `${conference.description}\n\nFocus: ${conference.focus}\nAttendees: ${conference.attendees}\nWebsite: ${conference.website}`],
+    ['location', `${conference.location}, ${conference.country}`],
+  ]
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
 
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  return `https://calendar.google.com/calendar/render?${params}`;
 }
 
 // ==================== NATIVE CALENDAR HELPERS ====================
-function parseConferenceDates(conference: ProcessedConference): { start: Date; end: Date } | null {
+function parseConferenceDates(conference: ConferenceItem): { start: Date; end: Date } | null {
   const monthMap: Record<string, number> = {
     Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
     Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
   };
-  const dateStr = conference.passed ? conference.originalDate : conference.date;
+  const dateStr = conference.passed ? (conference.originalDate ?? conference.date) : conference.date;
   if (dateStr.startsWith('TBA')) return null;
 
   // "Feb 2-5, 2026" same month range
@@ -443,15 +473,15 @@ async function getDefaultCalendarId(): Promise<string | null> {
   }
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   // Prefer default calendar or first writable one
-  const defaultCal = calendars.find(c => c.allowsModifications && c.isPrimary)
-    || calendars.find(c => c.allowsModifications && c.source?.name === 'iCloud')
-    || calendars.find(c => c.allowsModifications && c.source?.name?.includes('Google'))
-    || calendars.find(c => c.allowsModifications);
+  const defaultCal = calendars.find((c: any) => c.allowsModifications && c.isPrimary)
+    || calendars.find((c: any) => c.allowsModifications && c.source?.name === 'iCloud')
+    || calendars.find((c: any) => c.allowsModifications && c.source?.name?.includes('Google'))
+    || calendars.find((c: any) => c.allowsModifications);
   if (!defaultCal) {
     // Create a new calendar on iOS if none found
     if (Platform.OS === 'ios') {
-      const defaultSource = calendars.find(c => c.source?.type === 'local')?.source
-        || calendars.find(c => c.source?.name === 'iCloud')?.source
+      const defaultSource = calendars.find((c: any) => c.source?.type === 'local')?.source
+        || calendars.find((c: any) => c.source?.name === 'iCloud')?.source
         || calendars[0]?.source;
       if (defaultSource) {
         const newCalId = await Calendar.createCalendarAsync({
@@ -473,7 +503,7 @@ async function getDefaultCalendarId(): Promise<string | null> {
   return defaultCal.id;
 }
 
-async function addConferenceToNativeCalendar(conference: ProcessedConference): Promise<boolean> {
+async function addConferenceToNativeCalendar(conference: ConferenceItem): Promise<boolean> {
   const dates = parseConferenceDates(conference);
   if (!dates) return false;
   const calId = await getDefaultCalendarId();
@@ -495,7 +525,7 @@ async function addConferenceToNativeCalendar(conference: ProcessedConference): P
   }
 }
 
-async function syncAllConferencesToCalendar(conferences: ProcessedConference[]): Promise<{ added: number; skipped: number }> {
+async function syncAllConferencesToCalendar(conferences: ConferenceItem[]): Promise<{ added: number; skipped: number }> {
   const upcoming = conferences.filter(c => !c.passed && parseConferenceDates(c) !== null);
   const calId = await getDefaultCalendarId();
   if (!calId) return { added: 0, skipped: 0 };
@@ -523,7 +553,58 @@ async function syncAllConferencesToCalendar(conferences: ProcessedConference[]):
   return { added, skipped };
 }
 
-function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedConference; onClose: () => void }) {
+function formatConferenceDate(dateStr: string): string {
+  const monthMap: Record<string, string> = {
+    Jan: 'Jan', Feb: 'Feb', Mar: 'Mar', Apr: 'Apr', May: 'May', Jun: 'Jun',
+    Jul: 'Jul', Aug: 'Aug', Sep: 'Sep', Oct: 'Oct', Nov: 'Nov', Dec: 'Dec',
+  };
+  const dateMatch = dateStr.match(/^([A-Za-z]+)\s+(\d+),\s*(\d{4})$/);
+  if (dateMatch) {
+    const month = monthMap[dateMatch[1]] || dateMatch[1];
+    return `${month} ${dateMatch[2]}, ${dateMatch[3]}`;
+  }
+  return dateStr;
+}
+
+function normalizeConferenceUrl(rawUrl?: string | null): string | null {
+  const value = (rawUrl || '').trim().replace(/[),.;]+$/, '');
+  if (!value) return null;
+
+  if (/^(mailto:|tel:|sms:|https?:\/\/)/i.test(value)) {
+    return value;
+  }
+
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    return `mailto:${value}`;
+  }
+
+  return `https://${value}`;
+}
+
+async function openConferenceLink(rawUrl?: string | null, label = 'link'): Promise<void> {
+  const url = normalizeConferenceUrl(rawUrl);
+  if (!url) return;
+
+  try {
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert('Unable to open link', `This ${label} link is not valid.`);
+      return;
+    }
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('Unable to open link', `This ${label} link could not be opened.`);
+  }
+}
+
+function getConferenceVenue(conference: ConferenceItem): string | null {
+  if (conference.location) {
+    return conference.location;
+  }
+  return null;
+}
+
+function ConferenceDetailModal({ conference, onClose }: { conference: ConferenceItem; onClose: () => void }) {
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -670,7 +751,7 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
             <View style={cdStyles.section}>
               <Text style={cdStyles.sectionTitle}>Contact Emails</Text>
               {conference.contactEmail && (
-                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm }} onPress={() => Linking.openURL(`mailto:${conference.contactEmail}`)}>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.sm }} onPress={() => openConferenceLink(`mailto:${conference.contactEmail}`, 'email')}>
                   <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' }}>
                     <Ionicons name="mail" size={16} color={colors.primary} />
                   </View>
@@ -682,12 +763,12 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
                 </TouchableOpacity>
               )}
               {conference.speakerEmail && (
-                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => Linking.openURL(`mailto:${conference.speakerEmail}?subject=Speaker%20Proposition%20-%20${encodeURIComponent(conference.name)}`)}>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => openConferenceLink(`mailto:${conference.speakerEmail}?subject=Speaker%20Proposition%20-%20${encodeURIComponent(conference.name)}`, 'speaker email')}>
                   <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.accent + '15', justifyContent: 'center', alignItems: 'center' }}>
                     <Ionicons name="mic" size={16} color={colors.accentLight} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' }}>Speaker Proposition</Text>
+                    <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '600' }}>Speaker Proposition{conference.speakerContact ? ` – ${conference.speakerContact}` : ''}</Text>
                     <Text style={{ fontSize: fontSize.sm, color: colors.accentLight, fontWeight: '600', marginTop: 2 }}>{conference.speakerEmail}</Text>
                   </View>
                   <Ionicons name="open-outline" size={14} color={colors.accentLight} />
@@ -697,7 +778,7 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
           )}
 
           {/* Website Button */}
-          <TouchableOpacity style={cdStyles.websiteBtn} onPress={() => Linking.openURL(conference.website)}>
+          <TouchableOpacity style={cdStyles.websiteBtn} onPress={() => openConferenceLink(conference.website, 'conference website')}>
             <Ionicons name="globe-outline" size={18} color={colors.black} />
             <Text style={cdStyles.websiteBtnText}>Visit Conference Website</Text>
             <Ionicons name="open-outline" size={16} color={colors.black} />
@@ -710,7 +791,7 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
             return (
               <TouchableOpacity
                 style={[cdStyles.websiteBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.sm }]}
-                onPress={() => Linking.openURL(calUrl)}
+                onPress={() => openConferenceLink(calUrl, 'Google Calendar')}
               >
                 <Ionicons name="calendar-outline" size={18} color={colors.primary} />
                 <Text style={[cdStyles.websiteBtnText, { color: colors.primary }]}>Add to Google Calendar</Text>
@@ -811,31 +892,17 @@ function ConferenceDetailModal({ conference, onClose }: { conference: ProcessedC
   );
 }
 
-function ConferencesView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
-  const [selectedConference, setSelectedConference] = useState<ProcessedConference | null>(null);
+function ConferencesView({ conferences }: { conferences: ConferenceItem[] }) {
+  const [selectedConference, setSelectedConference] = useState<ConferenceItem | null>(null);
   const [filterFocus, setFilterFocus] = useState('All');
   const [filterCountry, setFilterCountry] = useState('All');
   const [filterMonth, setFilterMonth] = useState('All');
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
   const focuses = ['All', 'AI', 'Technology', 'Investment', 'Entrepreneurship', 'Infrastructure'];
 
-  // Fetch any additional conferences from Convex (admin-added)
-  const convexConferences = useQuery(api.conferences.list, {}) ?? [];
+  const allConferences = sortConferencesAscending(conferences).filter(isUpcomingConference);
 
-  // Use static data as base, merge Convex additions (avoid duplicates by name)
-  const staticNames = new Set(CONFERENCES.map(c => c.name));
-  const convexAdditions: ProcessedConference[] = convexConferences
-    .filter((c: any) => !staticNames.has(c.name))
-    .map((c: any) => ({
-      ...c,
-      passed: false,
-      isLive: false,
-      originalDate: c.date,
-    }));
-  const allConferences = [...CONFERENCES, ...convexAdditions];
-
-  // Derive unique month labels from conferences in order
   const monthLabels = (() => {
     const seen = new Set<string>();
     const labels: string[] = [];
@@ -850,6 +917,15 @@ function ConferencesView({ onContentScroll, compactFiltersCollapsed, isCompactSc
   })();
   const MONTHS = ['All', ...monthLabels];
 
+  const countries: string[] = [
+    'All',
+    ...Array.from(new Set(allConferences.map((c: ConferenceItem) => c.country).filter(Boolean) as string[])).sort((a, b) => {
+      if (a === 'South Africa') return -1;
+      if (b === 'South Africa') return 1;
+      return a.localeCompare(b);
+    }),
+  ];
+
   const filtered = allConferences.filter(c => {
     const mf = filterFocus === 'All' || c.focus === filterFocus;
     const mc = filterCountry === 'All' || c.country === filterCountry;
@@ -857,314 +933,300 @@ function ConferencesView({ onContentScroll, compactFiltersCollapsed, isCompactSc
     const ms = !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.country.toLowerCase().includes(search.toLowerCase()) || c.location.toLowerCase().includes(search.toLowerCase());
     return mf && mc && mm && ms;
   });
+
   const sections = groupByMonth(filtered);
-  const activeFilterCount = [
-    filterFocus !== 'All',
-    filterCountry !== 'All',
-    filterMonth !== 'All',
-    Boolean(search.trim()),
-  ].filter(Boolean).length;
-  
+
+  const renderConferenceCard = (conference: ConferenceItem) => {
+    return (
+      <TouchableOpacity
+        style={[styles.confCard, conference.isLive && styles.confCardLive]}
+        onPress={() => setSelectedConference(conference)}
+      >
+        <View style={styles.confHeader}>
+          <View style={styles.confIcon}><Feather name={conference.icon as any} size={22} color={colors.primary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.confName}>{conference.name}</Text>
+            <Text style={styles.confFocus}>{conference.focus} • {conference.country}</Text>
+          </View>
+          <View style={styles.confAttendeeBadge}><Ionicons name="people" size={10} color={colors.primary} /><Text style={styles.confAttendeeText}>{conference.attendees}</Text></View>
+        </View>
+
+        <Text style={styles.confDesc} numberOfLines={2}>{conference.description}</Text>
+
+        <View style={styles.confDetailsBlock}>
+          <View style={styles.confDetailRow}>
+            <Text style={styles.confDetailValue} numberOfLines={1}>{conference.location}, {conference.country}</Text>
+          </View>
+        </View>
+
+        <View style={styles.confFooter}>
+          <View style={[styles.confDateBadge, conference.isLive && { backgroundColor: '#00C85320' }]}>
+            <Ionicons name={conference.isLive ? 'radio' : 'calendar'} size={12} color={conference.isLive ? '#00C853' : colors.primary} />
+            <Text style={[styles.confDateText, conference.isLive && { color: '#00C853', fontWeight: '700' }]}>{conference.date}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <View style={{ flex: 1 }}>
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={18} color={colors.textMuted} />
-        <TextInput style={styles.searchInput} placeholder="Search conferences..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
-        {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
-      </View>
-      {isCompactScreen && compactFiltersCollapsed ? (
-        <CompactFilterButton
-          label={activeFilterCount > 0 ? `${activeFilterCount} filters active` : 'Conference filters'}
-          onPress={onExpandFilters}
-        />
-      ) : (
-        <>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-            {focuses.map((f: any) => (<TouchableOpacity key={f} style={[styles.confChip, filterFocus === f && styles.confChipActive]} onPress={() => setFilterFocus(f)}><Text style={[styles.confChipText, filterFocus === f && styles.confChipTextActive]}>{f}</Text></TouchableOpacity>))}</ScrollView>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-            {COUNTRIES.map((c: any) => (<TouchableOpacity key={c} style={[styles.confChip, filterCountry === c && styles.confChipActive]} onPress={() => setFilterCountry(c)}><Text style={[styles.confChipText, filterCountry === c && styles.confChipTextActive]}>{c}</Text></TouchableOpacity>))}</ScrollView>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
-            {MONTHS.map((m: any) => (<TouchableOpacity key={m} style={[styles.confChip, filterMonth === m && styles.confChipActive]} onPress={() => setFilterMonth(m)}><Text style={[styles.confChipText, filterMonth === m && styles.confChipTextActive]}>{m}</Text></TouchableOpacity>))}</ScrollView>
-        </>
-      )}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: spacing.sm }}>
-        <Text style={[styles.resultCount, { marginBottom: 0, paddingHorizontal: 0 }]}>{filtered.length} conferences found</Text>
-      </View>
+    <>
       <SectionList
+        style={styles.confSectionList}
         sections={sections}
-        keyExtractor={(item: any, i: number) => `${item._id || item.name}-${i}`}
-        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-        onScroll={onContentScroll}
-        scrollEventThrottle={16}
-        stickySectionHeadersEnabled={false}
-        renderSectionHeader={({ section }: { section: { title: string; data: ProcessedConference[] } }) => (
-          <View style={[styles.confSectionHeader]}>
-            <Ionicons name="calendar" size={16} color={colors.primary} />
-            <Text style={[styles.confSectionTitle]}>{section.title}</Text>
-            <View style={[styles.confSectionCount]}><Text style={[styles.confSectionCountText]}>{section.data.length}</Text></View>
+        keyExtractor={(item: ConferenceItem) => item._id || item.name}
+        renderItem={({ item }: { item: ConferenceItem }) => renderConferenceCard(item)}
+        renderSectionHeader={({ section }: { section: { title: string; data: ConferenceItem[] } }) => (
+          <View style={styles.confSectionHeader}>
+            <View style={styles.confSectionHeaderRow}>
+              <Text style={styles.confSectionTitle}>{section.title}</Text>
+              <Text style={styles.confSectionCount}>{section.data.length}</Text>
+            </View>
           </View>
         )}
-        renderItem={({ item }: { item: any }) => (
-          <TouchableOpacity style={[styles.confCard, item.isLive && { borderColor: '#00C85360', borderWidth: 1.5 }]} onPress={() => setSelectedConference(item)}>
-            <View style={styles.confHeader}>
-              <View style={[styles.confIcon]}><Feather name={item.icon as any} size={22} color={colors.primary} /></View>
-              <View style={{ flex: 1 }}><Text style={[styles.confName]}>{item.name}</Text><Text style={styles.confFocus}>{item.focus} • {item.country}</Text></View>
-              <View style={styles.confAttendeeBadge}><Ionicons name="people" size={10} color={colors.primary} /><Text style={styles.confAttendeeText}>{item.attendees}</Text></View>
+        stickySectionHeadersEnabled={false}
+        nestedScrollEnabled
+        contentContainerStyle={{ paddingBottom: 140 }}
+        ListHeaderComponent={
+          <View>
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color={colors.textMuted} />
+              <TextInput style={styles.searchInput} placeholder="Search conferences..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
+              {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
             </View>
-            <Text style={styles.confDesc} numberOfLines={2}>{item.description}</Text>
-            <View style={styles.confFooter}>
-              <View style={[styles.confDateBadge, item.isLive && { backgroundColor: '#00C85320' }]}><Ionicons name={item.isLive ? 'radio' : 'calendar'} size={12} color={item.isLive ? '#00C853' : colors.primary} /><Text style={[styles.confDateText, item.isLive && { color: '#00C853', fontWeight: '700' }]}>{item.date}</Text></View>
-              <View style={styles.confMetaItem}><Ionicons name="location" size={12} color={colors.textSecondary} /><Text style={styles.confMetaText}>{item.location}</Text></View>
+            <View style={styles.confFiltersStack}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+                {focuses.map((f: any) => (<TouchableOpacity key={f} style={[styles.confChip, filterFocus === f && styles.confChipActive]} onPress={() => setFilterFocus(f)}><Text style={[styles.confChipText, filterFocus === f && styles.confChipTextActive]}>{f}</Text></TouchableOpacity>))}
+              </ScrollView>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+                {countries.map((c: string) => (<TouchableOpacity key={c} style={[styles.confChip, filterCountry === c && styles.confChipActive]} onPress={() => setFilterCountry(c)}><Text style={[styles.confChipText, filterCountry === c && styles.confChipTextActive]}>{c}</Text></TouchableOpacity>))}
+              </ScrollView>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.confFilterSection} contentContainerStyle={styles.confFilterChips}>
+                {MONTHS.map((m: any) => (<TouchableOpacity key={m} style={[styles.confChip, filterMonth === m && styles.confChipActive]} onPress={() => setFilterMonth(m)}><Text style={[styles.confChipText, filterMonth === m && styles.confChipTextActive]}>{m}</Text></TouchableOpacity>))}
+              </ScrollView>
             </View>
-            {(item.contactEmail || item.speakerEmail) && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
-                {item.contactEmail && (
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '10', paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }} onPress={() => Linking.openURL(`mailto:${item.contactEmail}`)}>
-                    <Ionicons name="mail" size={11} color={colors.primary} />
-                    <Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }} numberOfLines={1}>Delegates</Text>
-                  </TouchableOpacity>
-                )}
-                {item.speakerEmail && (
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.accent + '15', paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.sm }} onPress={() => Linking.openURL(`mailto:${item.speakerEmail}`)}>
-                    <Ionicons name="mic" size={11} color={colors.accentLight} />
-                    <Text style={{ fontSize: 10, color: colors.accentLight, fontWeight: '600' }} numberOfLines={1}>Speakers</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, marginBottom: 0 }}>
+              <Text style={[styles.resultCount, { marginBottom: 0, paddingHorizontal: 0 }]}>{filtered.length} conferences found</Text>
+            </View>
+          </View>
+        }
       />
-      {selectedConference && <ConferenceDetailModal conference={selectedConference} onClose={() => setSelectedConference(null)} />}
-    </View>
+      {selectedConference ? (
+        <ConferenceDetailModal conference={selectedConference} onClose={() => setSelectedConference(null)} />
+      ) : null}
+    </>
   );
 }
 
 // ==================== PODCASTS VIEW ====================
-function PodcastsView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
-const [selectedPodcast, setSelectedPodcast] = useState<Podcast | null>(null);
-const [filterCat, setFilterCat] = useState('All');
-const [search, setSearch] = useState('');
-const filtered = SA_PODCASTS.filter(p => {
-const mc = filterCat === 'All' || p.category === filterCat;
-const ms = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.host.toLowerCase().includes(search.toLowerCase()) || p.focus.toLowerCase().includes(search.toLowerCase());
-return mc && ms;
-});
-return (
-<View style={{ flex: 1 }}>
-<View style={styles.searchBar}>
-<Ionicons name="search" size={18} color={colors.textMuted} />
-<TextInput style={styles.searchInput} placeholder="Search podcasts..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
-{search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
-</View>
-{isCompactScreen && compactFiltersCollapsed ? (
-<CompactFilterButton label={filterCat === 'All' ? 'All podcasts' : filterCat} onPress={onExpandFilters} />
-) : (
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
-{PODCAST_CATEGORIES.map((c: any) => (
-<TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
-<Text style={[styles.filterChipText, filterCat === c && styles.filterChipTextActive]}>{c}</Text>
-</TouchableOpacity>
-))}
-</ScrollView>
-)}
-<Text style={styles.resultCount}>{filtered.length} podcasts found</Text>
-<FlatList data={filtered} keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.podcastCard} onPress={() => setSelectedPodcast(item)}>
-<View style={styles.podcastHeader}>
-<View style={[styles.podcastIcon, { backgroundColor: colors.primary + '15' }]}><Ionicons name="mic" size={20} color={colors.primary} /></View>
-<View style={{ flex: 1 }}><Text style={styles.podcastName}>{item.name}</Text><Text style={styles.podcastHost}>{item.host}</Text></View>
-<View style={[styles.podcastCatBadge, { backgroundColor: colors.primary + '15' }]}><Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }}>{item.category}</Text></View>
-</View>
-<Text style={styles.podcastDesc} numberOfLines={2}>{item.description}</Text>
-<View style={styles.podcastFooter}>
-<View style={styles.podcastFocusTag}><Text style={styles.podcastFocusText}>{item.focus}</Text></View>
-{item.website ? <TouchableOpacity onPress={() => Linking.openURL(item.website)}><Ionicons name="open-outline" size={16} color={colors.primary} /></TouchableOpacity> : null}
-</View>
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedPodcast} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedPodcast(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>Podcast</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<Text style={styles.funderDetailName}>{selectedPodcast?.name}</Text>
-<Text style={[styles.funderDetailFirm, { marginTop: 4 }]}>Hosted by {selectedPodcast?.host}</Text>
-<View style={[styles.funderTag, { alignSelf: 'flex-start', marginTop: spacing.sm }]}><Text style={styles.funderTagText}>{selectedPodcast?.category}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedPodcast?.description}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Focus</Text><Text style={styles.detailText}>{selectedPodcast?.focus}</Text></View>
-{selectedPodcast?.contact ? <View style={styles.detailSection}><Text style={styles.detailLabel}>Contact</Text><TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedPodcast?.contact}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedPodcast?.contact}</Text></TouchableOpacity></View> : null}
-<TouchableOpacity style={styles.visitButton} onPress={() => selectedPodcast?.website && Linking.openURL(selectedPodcast.website)}>
-<Ionicons name="open-outline" size={18} color={colors.black} /><Text style={styles.visitButtonText}>Listen Now</Text>
-</TouchableOpacity>
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
+function PodcastsView() {
+  const [selectedPodcast, setSelectedPodcast] = useState<Podcast | null>(null);
+  const [filterCat, setFilterCat] = useState('All');
+  const [search, setSearch] = useState('');
+  const filtered = SA_PODCASTS.filter(p => {
+    const mc = filterCat === 'All' || p.category === filterCat;
+    const ms = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.host.toLowerCase().includes(search.toLowerCase()) || p.focus.toLowerCase().includes(search.toLowerCase());
+    return mc && ms;
+  });
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput style={styles.searchInput} placeholder="Search podcasts..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
+        {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
+        {PODCAST_CATEGORIES.map((c: any) => (
+          <TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
+            <Text style={[styles.filterChipText, filterCat === c && styles.filterChipTextActive]}>{c}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <Text style={styles.resultCount}>{filtered.length} podcasts found</Text>
+      <FlatList data={filtered} keyExtractor={(item: any, i: number) => `${item.name}-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.podcastCard} onPress={() => setSelectedPodcast(item)}>
+            <View style={styles.podcastHeader}>
+              <View style={[styles.podcastIcon, { backgroundColor: colors.primary + '15' }]}><Ionicons name="mic" size={20} color={colors.primary} /></View>
+              <View style={{ flex: 1 }}><Text style={styles.podcastName}>{item.name}</Text><Text style={styles.podcastHost}>{item.host}</Text></View>
+              <View style={[styles.podcastCatBadge, { backgroundColor: colors.primary + '15' }]}><Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }}>{item.category}</Text></View>
+            </View>
+            <Text style={styles.podcastDesc} numberOfLines={2}>{item.description}</Text>
+            <View style={styles.podcastFooter}>
+              <View style={styles.podcastFocusTag}><Text style={styles.podcastFocusText}>{item.focus}</Text></View>
+              {item.website ? <TouchableOpacity onPress={() => Linking.openURL(item.website)}><Ionicons name="open-outline" size={16} color={colors.primary} /></TouchableOpacity> : null}
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedPodcast} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedPodcast(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Podcast</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <Text style={styles.funderDetailName}>{selectedPodcast?.name}</Text>
+            <Text style={[styles.funderDetailFirm, { marginTop: 4 }]}>Hosted by {selectedPodcast?.host}</Text>
+            <View style={[styles.funderTag, { alignSelf: 'flex-start', marginTop: spacing.sm }]}><Text style={styles.funderTagText}>{selectedPodcast?.category}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedPodcast?.description}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Focus</Text><Text style={styles.detailText}>{selectedPodcast?.focus}</Text></View>
+            {selectedPodcast?.contact ? <View style={styles.detailSection}><Text style={styles.detailLabel}>Contact</Text><TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedPodcast?.contact}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedPodcast?.contact}</Text></TouchableOpacity></View> : null}
+            <TouchableOpacity style={styles.visitButton} onPress={() => selectedPodcast?.website && Linking.openURL(selectedPodcast.website)}>
+              <Ionicons name="open-outline" size={18} color={colors.black} /><Text style={styles.visitButtonText}>Listen Now</Text>
+            </TouchableOpacity>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
+    </View>
+  );
 }
 
 // ==================== NEWS VIEW ====================
-function NewsView({ onContentScroll, compactFiltersCollapsed, isCompactScreen, onExpandFilters }: HubContentProps) {
-const [filterCat, setFilterCat] = useState('All');
-const filtered = AI_NEWS.filter(n => filterCat === 'All' || n.category === filterCat);
-return (
-<View style={{ flex: 1 }}>
-{isCompactScreen && compactFiltersCollapsed ? (
-<CompactFilterButton label={filterCat === 'All' ? 'All news' : filterCat} onPress={onExpandFilters} />
-) : (
-<ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
-{AI_NEWS_CATEGORIES.map((c: any) => (
-<TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
-<Text style={[styles.filterChipText, filterCat === c && styles.filterChipTextActive]}>{c}</Text>
-</TouchableOpacity>
-))}
-</ScrollView>
-)}
-<FlatList data={filtered} keyExtractor={(item: any, i: number) => `news-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.caseCard} onPress={() => Linking.openURL(item.url)}>
-<View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{item.category}</Text></View><Text style={styles.caseYear}>{item.date}</Text></View>
-<Text style={styles.caseTitle}>{item.title}</Text>
-<Text style={styles.caseCompany}>{item.source}</Text>
-<Text style={styles.caseChallenge} numberOfLines={3}>{item.summary}</Text>
-</TouchableOpacity>
-)}
-/>
-</View>
-);
+function NewsView() {
+  const [filterCat, setFilterCat] = useState('All');
+  const filtered = AI_NEWS.filter(n => filterCat === 'All' || n.category === filterCat);
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
+        {AI_NEWS_CATEGORIES.map((c: any) => (
+          <TouchableOpacity key={c} style={[styles.filterChip, filterCat === c && styles.filterChipActive]} onPress={() => setFilterCat(c)}>
+            <Text style={[styles.filterChipText, filterCat === c && styles.filterChipTextActive]}>{c}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <FlatList data={filtered} keyExtractor={(item: any, i: number) => `news-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.caseCard} onPress={() => Linking.openURL(item.url)}>
+            <View style={styles.caseTop}><View style={styles.caseIndustryBadge}><Text style={styles.caseIndustryText}>{item.category}</Text></View><Text style={styles.caseYear}>{item.date}</Text></View>
+            <Text style={styles.caseTitle}>{item.title}</Text>
+            <Text style={styles.caseCompany}>{item.source}</Text>
+            <Text style={styles.caseChallenge} numberOfLines={3}>{item.summary}</Text>
+          </TouchableOpacity>
+        )}
+      />
+    </View>
+  );
 }
 
 // ==================== SETAs VIEW ====================
-function SETAsView({ onContentScroll }: HubContentProps) {
-const [selectedSETA, setSelectedSETA] = useState<SETA | null>(null);
-return (
-<View style={{ flex: 1 }}>
-<FlatList data={SETAS} keyExtractor={(item: any, i: number) => `seta-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.toolCard} onPress={() => setSelectedSETA(item)}>
-<View style={styles.toolHeader}>
-<View style={styles.toolIcon}><Ionicons name="school" size={20} color={colors.primary} /></View>
-<View style={{ flex: 1 }}><Text style={styles.toolName}>{item.name}</Text><Text style={styles.toolCategory}>{item.sector}</Text></View>
-</View>
-<Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text>
-<View style={styles.featureRow}>
-<View style={styles.featureChip}><Text style={styles.featureChipText}>{item.location}</Text></View>
-<View style={styles.featureChip}><Text style={styles.featureChipText}>{item.country}</Text></View>
-</View>
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedSETA} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedSETA(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>SETA</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<Text style={styles.funderDetailName}>{selectedSETA?.name}</Text>
-<View style={[styles.funderTag, { alignSelf: 'flex-start', marginTop: spacing.sm }]}><Text style={styles.funderTagText}>{selectedSETA?.sector}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedSETA?.description}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Focus</Text><Text style={styles.detailText}>{selectedSETA?.focus}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Location</Text><Text style={styles.detailText}>{selectedSETA?.location}, {selectedSETA?.country}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Contact</Text>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedSETA?.email}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedSETA?.email}</Text></TouchableOpacity>
-{selectedSETA?.phone ? <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`tel:${selectedSETA?.phone}`)}><Ionicons name="call" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedSETA?.phone}</Text></TouchableOpacity> : null}
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedSETA?.website}`)}><Ionicons name="globe" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedSETA?.website}</Text></TouchableOpacity>
-</View>
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
+function SETAsView() {
+  const [selectedSETA, setSelectedSETA] = useState<SETA | null>(null);
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList data={SETAS} keyExtractor={(item: any, i: number) => `seta-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100, paddingTop: spacing.md }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.toolCard} onPress={() => setSelectedSETA(item)}>
+            <View style={styles.toolHeader}>
+              <View style={styles.toolIcon}><Ionicons name="school" size={20} color={colors.primary} /></View>
+              <View style={{ flex: 1 }}><Text style={styles.toolName}>{item.name}</Text><Text style={styles.toolCategory}>{item.sector}</Text></View>
+            </View>
+            <Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text>
+            <View style={styles.featureRow}>
+              <View style={styles.featureChip}><Text style={styles.featureChipText}>{item.location}</Text></View>
+              <View style={styles.featureChip}><Text style={styles.featureChipText}>{item.country}</Text></View>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedSETA} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedSETA(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>SETA</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <Text style={styles.funderDetailName}>{selectedSETA?.name}</Text>
+            <View style={[styles.funderTag, { alignSelf: 'flex-start', marginTop: spacing.sm }]}><Text style={styles.funderTagText}>{selectedSETA?.sector}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedSETA?.description}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Focus</Text><Text style={styles.detailText}>{selectedSETA?.focus}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Location</Text><Text style={styles.detailText}>{selectedSETA?.location}, {selectedSETA?.country}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Contact</Text>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedSETA?.email}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedSETA?.email}</Text></TouchableOpacity>
+              {selectedSETA?.phone ? <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`tel:${selectedSETA?.phone}`)}><Ionicons name="call" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedSETA?.phone}</Text></TouchableOpacity> : null}
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedSETA?.website}`)}><Ionicons name="globe" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedSETA?.website}</Text></TouchableOpacity>
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
+    </View>
+  );
 }
 
 // ==================== STATE AGENCIES VIEW ====================
-function StateAgenciesView({ onContentScroll }: HubContentProps) {
-const [selectedAgency, setSelectedAgency] = useState<StateAgency | null>(null);
-const [search, setSearch] = useState('');
-const filtered = STATE_AGENCIES.filter(a => {
-return !search || a.name.toLowerCase().includes(search.toLowerCase()) || a.acronym.toLowerCase().includes(search.toLowerCase()) || a.focus.toLowerCase().includes(search.toLowerCase());
-});
-return (
-<View style={{ flex: 1 }}>
-<View style={styles.searchBar}>
-<Ionicons name="search" size={18} color={colors.textMuted} />
-<TextInput style={styles.searchInput} placeholder="Search agencies..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
-{search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
-</View>
-<Text style={styles.resultCount}>{filtered.length} agencies found</Text>
-<FlatList data={filtered} keyExtractor={(item: any, i: number) => `agency-${i}`}
-contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
-onScroll={onContentScroll}
-scrollEventThrottle={16}
-renderItem={({ item }: { item: any }) => (
-<TouchableOpacity style={styles.toolCard} onPress={() => setSelectedAgency(item)}>
-<View style={styles.toolHeader}>
-<View style={styles.toolIcon}><Ionicons name="business" size={20} color={colors.primary} /></View>
-<View style={{ flex: 1 }}><Text style={styles.toolName}>{item.acronym}</Text><Text style={styles.toolCategory}>{item.type}</Text></View>
-</View>
-<Text style={[styles.toolName, { marginBottom: 4 }]}>{item.name}</Text>
-<Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text>
-<View style={styles.featureRow}>
-<View style={styles.featureChip}><Text style={styles.featureChipText}>{item.city}</Text></View>
-<View style={styles.featureChip}><Text style={styles.featureChipText}>{item.focus}</Text></View>
-</View>
-</TouchableOpacity>
-)}
-/>
-<Modal visible={!!selectedAgency} animationType="slide" presentationStyle="pageSheet">
-<View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
-<View style={styles.modalHeader}>
-<TouchableOpacity onPress={() => setSelectedAgency(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
-<Text style={styles.modalHeaderTitle}>State Agency</Text><View style={{ width: 28 }} />
-</View>
-<ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-<Text style={styles.funderDetailName}>{selectedAgency?.name}</Text>
-<Text style={[styles.funderDetailFirm, { marginTop: 4 }]}>{selectedAgency?.acronym} • {selectedAgency?.type}</Text>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedAgency?.description}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Focus</Text><Text style={styles.detailText}>{selectedAgency?.focus}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Leadership</Text><Text style={styles.detailText}>{selectedAgency?.ceoName}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Location</Text><Text style={styles.detailText}>{selectedAgency?.address}, {selectedAgency?.city}</Text></View>
-<View style={styles.detailSection}><Text style={styles.detailLabel}>Contact</Text>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedAgency?.email}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedAgency?.email}</Text></TouchableOpacity>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`tel:${selectedAgency?.phone}`)}><Ionicons name="call" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedAgency?.phone}</Text></TouchableOpacity>
-<TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedAgency?.website}`)}><Ionicons name="globe" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedAgency?.website}</Text></TouchableOpacity>
-</View>
-<View style={{ height: 40 }} />
-</ScrollView>
-</SafeAreaView></View>
-</Modal>
-</View>
-);
+function StateAgenciesView() {
+  const [selectedAgency, setSelectedAgency] = useState<StateAgency | null>(null);
+  const [search, setSearch] = useState('');
+  const filtered = STATE_AGENCIES.filter(a => {
+    return !search || a.name.toLowerCase().includes(search.toLowerCase()) || a.acronym.toLowerCase().includes(search.toLowerCase()) || a.focus.toLowerCase().includes(search.toLowerCase());
+  });
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <TextInput style={styles.searchInput} placeholder="Search agencies..." placeholderTextColor={colors.textMuted} value={search} onChangeText={setSearch} />
+        {search ? <TouchableOpacity onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={colors.textMuted} /></TouchableOpacity> : null}
+      </View>
+      <Text style={styles.resultCount}>{filtered.length} agencies found</Text>
+      <FlatList data={filtered} keyExtractor={(item: any, i: number) => `agency-${i}`}
+        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 100 }}
+        renderItem={({ item }: { item: any }) => (
+          <TouchableOpacity style={styles.toolCard} onPress={() => setSelectedAgency(item)}>
+            <View style={styles.toolHeader}>
+              <View style={styles.toolIcon}><Ionicons name="business" size={20} color={colors.primary} /></View>
+              <View style={{ flex: 1 }}><Text style={styles.toolName}>{item.acronym}</Text><Text style={styles.toolCategory}>{item.type}</Text></View>
+            </View>
+            <Text style={[styles.toolName, { marginBottom: 4 }]}>{item.name}</Text>
+            <Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text>
+            <View style={styles.featureRow}>
+              <View style={styles.featureChip}><Text style={styles.featureChipText}>{item.city}</Text></View>
+              <View style={styles.featureChip}><Text style={styles.featureChipText}>{item.focus}</Text></View>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      <Modal visible={!!selectedAgency} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}><SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedAgency(null)}><Ionicons name="close" size={28} color={colors.text} /></TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>State Agency</Text><View style={{ width: 28 }} />
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <Text style={styles.funderDetailName}>{selectedAgency?.name}</Text>
+            <Text style={[styles.funderDetailFirm, { marginTop: 4 }]}>{selectedAgency?.acronym} • {selectedAgency?.type}</Text>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Description</Text><Text style={styles.detailText}>{selectedAgency?.description}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Focus</Text><Text style={styles.detailText}>{selectedAgency?.focus}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Leadership</Text><Text style={styles.detailText}>{selectedAgency?.ceoName}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Location</Text><Text style={styles.detailText}>{selectedAgency?.address}, {selectedAgency?.city}</Text></View>
+            <View style={styles.detailSection}><Text style={styles.detailLabel}>Contact</Text>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${selectedAgency?.email}`)}><Ionicons name="mail" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedAgency?.email}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`tel:${selectedAgency?.phone}`)}><Ionicons name="call" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedAgency?.phone}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.contactRow} onPress={() => Linking.openURL(`https://${selectedAgency?.website}`)}><Ionicons name="globe" size={18} color={colors.primary} /><Text style={styles.contactText}>{selectedAgency?.website}</Text></TouchableOpacity>
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView></View>
+      </Modal>
+    </View>
+  );
 }
 
 // ==================== MAIN COMPONENT ====================
-const TAB_CONFIG: { key: HubTab; label: string; icon: string; count: number }[] = [
-{ key: 'conferences', label: 'Conferences', icon: 'calendar', count: CONFERENCES.length },
-{ key: 'funders', label: 'Funders', icon: 'cash', count: AFRICAN_VCS.length },
-{ key: 'tools', label: 'AI Tools', icon: 'construct', count: AI_TOOLS.length },
-{ key: 'guides', label: 'Guides', icon: 'book', count: AI_GUIDES.length },
-{ key: 'cases', label: 'Cases', icon: 'briefcase', count: CASE_STUDIES.length },
-{ key: 'podcasts', label: 'Podcasts', icon: 'mic', count: SA_PODCASTS.length },
-{ key: 'news', label: 'News', icon: 'newspaper', count: AI_NEWS.length },
-{ key: 'setas', label: 'SETAs', icon: 'school', count: SETAS.length },
-{ key: 'stateAgencies', label: 'Agencies', icon: 'business', count: STATE_AGENCIES.length },
+const getTabConfig = (conferenceCount: number): { key: HubTab; label: string; icon: string; count: number }[] => [
+  { key: 'conferences', label: 'Conferences', icon: 'calendar', count: conferenceCount },
+  { key: 'funders', label: 'Funders', icon: 'cash', count: AFRICAN_VCS.length },
+  { key: 'tools', label: 'AI Tools', icon: 'construct', count: AI_TOOLS.length },
+  { key: 'guides', label: 'Guides', icon: 'book', count: AI_GUIDES.length },
+  { key: 'cases', label: 'Cases', icon: 'briefcase', count: CASE_STUDIES.length },
+  { key: 'podcasts', label: 'Podcasts', icon: 'mic', count: SA_PODCASTS.length },
+  { key: 'news', label: 'News', icon: 'newspaper', count: AI_NEWS.length },
+  { key: 'setas', label: 'SETAs', icon: 'school', count: SETAS.length },
+  { key: 'stateAgencies', label: 'Agencies', icon: 'business', count: STATE_AGENCIES.length },
 ];
 
 export default function AIHubScreen() {
@@ -1173,80 +1235,58 @@ export default function AIHubScreen() {
   const [activeTab, setActiveTab] = useState<HubTab>(
     ((route.params as any)?.tab as HubTab) || 'conferences'
   );
-  const [tabsCollapsed, setTabsCollapsed] = useState(false);
-  const isCompactScreen = width < COMPACT_HUB_BREAKPOINT;
-  const activeTabConfig = TAB_CONFIG.find((tab) => tab.key === activeTab) ?? TAB_CONFIG[0];
+  const convexConferences = (useQuery(api.conferences.list, {}) ?? []) as ConferenceItem[];
+  const conferenceCount = sortConferencesAscending(convexConferences).filter(isUpcomingConference).length;
+  const tabConfig = getTabConfig(conferenceCount);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
       const tab = (route.params as any)?.tab as HubTab | undefined;
       if (tab) {
         setActiveTab(tab);
-        setTabsCollapsed(false);
       }
     });
     return unsubscribe;
   }, [navigation, route]);
 
-  const handleContentScroll = useCallback((event: any) => {
-    if (!isCompactScreen) return;
-    const offsetY = event.nativeEvent.contentOffset.y;
-    if (offsetY > 32 && !tabsCollapsed) {
-      setTabsCollapsed(true);
-    } else if (offsetY <= 8 && tabsCollapsed) {
-      setTabsCollapsed(false);
-    }
-  }, [isCompactScreen, tabsCollapsed]);
-
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
-            <Ionicons name="arrow-back" size={22} color={colors.primary} />
-            <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginLeft: 4 }}>Home</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>AI Hub</Text>
-          <Text style={styles.headerSubtitle}>Resources for African Entrepreneurs</Text>
-        </View>
-        {isCompactScreen && tabsCollapsed ? (
-          <View style={styles.compactTabWrap}>
-            <TouchableOpacity
-              style={styles.compactTabButton}
-              onPress={() => setTabsCollapsed(false)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name={activeTabConfig.icon as any} size={16} color={colors.primary} />
-              <Text style={styles.compactTabText} numberOfLines={1}>{activeTabConfig.label}</Text>
-              <View style={styles.compactTabCount}>
-                <Text style={styles.compactTabCountText}>{activeTabConfig.count}</Text>
-              </View>
-              <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+        <View style={styles.topChrome}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs }}>
+              <Ionicons name="arrow-back" size={22} color={colors.primary} />
+              <Text style={{ fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginLeft: 4 }}>Home</Text>
             </TouchableOpacity>
+            <Text style={styles.headerTitle}>AI Hub</Text>
+            <Text style={styles.headerSubtitle}>Resources for African Entrepreneurs</Text>
           </View>
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabContent}>
-            {TAB_CONFIG.map(tab => (
-              <TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => {
-                setActiveTab(tab.key);
-                setTabsCollapsed(false);
-              }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tabScroll}
+            contentContainerStyle={styles.tabContent}
+          >
+            {tabConfig.map(tab => (
+              <TouchableOpacity key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
                 <Ionicons name={tab.icon as any} size={14} color={activeTab === tab.key ? colors.black : colors.textSecondary} />
                 <Text style={[styles.tabLabel, activeTab === tab.key && styles.tabLabelActive]}>{tab.label}</Text>
                 <View style={[styles.tabCount, activeTab === tab.key && styles.tabCountActive]}><Text style={[styles.tabCountText, activeTab === tab.key && styles.tabCountTextActive]}>{tab.count}</Text></View>
               </TouchableOpacity>
             ))}
           </ScrollView>
-        )}
-        {activeTab === 'funders' && <FundersView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
-        {activeTab === 'tools' && <ToolsView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
-        {activeTab === 'guides' && <GuidesView onContentScroll={handleContentScroll} />}
-        {activeTab === 'cases' && <CaseStudiesView onContentScroll={handleContentScroll} />}
-        {activeTab === 'conferences' && <ConferencesView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
-        {activeTab === 'podcasts' && <PodcastsView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
-        {activeTab === 'news' && <NewsView onContentScroll={handleContentScroll} compactFiltersCollapsed={tabsCollapsed} isCompactScreen={isCompactScreen} onExpandFilters={() => setTabsCollapsed(false)} />}
-        {activeTab === 'setas' && <SETAsView onContentScroll={handleContentScroll} />}
-        {activeTab === 'stateAgencies' && <StateAgenciesView onContentScroll={handleContentScroll} />}
+        </View>
+        <View style={styles.contentArea}>
+          {activeTab === 'funders' && <FundersView />}
+          {activeTab === 'tools' && <ToolsView />}
+          {activeTab === 'guides' && <GuidesView />}
+          {activeTab === 'cases' && <CaseStudiesView />}
+          {activeTab === 'conferences' && <ConferencesView conferences={convexConferences} />}
+          {activeTab === 'podcasts' && <PodcastsView />}
+          {activeTab === 'news' && <NewsView />}
+          {activeTab === 'setas' && <SETAsView />}
+          {activeTab === 'stateAgencies' && <StateAgenciesView />}
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -1255,43 +1295,73 @@ export default function AIHubScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   safeArea: { flex: 1 },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  topChrome: {
+    flexShrink: 0,
+  },
+  contentArea: {
+    flex: 1,
+    minHeight: 0,
+  },
+  conferencesContainer: {
+    flex: 1,
+    minHeight: 0,
+  },
+  header: { paddingHorizontal: spacing.lg, paddingTop: 0, paddingBottom: 0 },
   headerTitle: { fontSize: fontSize.xxl, fontWeight: '800', color: colors.text },
   headerSubtitle: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600', marginTop: 2 },
-  compactFilterWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  compactFilterButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  compactFilterText: { maxWidth: width - spacing.lg * 2 - 58, fontSize: fontSize.sm, lineHeight: 18, color: colors.text, fontWeight: '600' },
-  compactTabWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  compactTabButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  compactTabText: { maxWidth: width - spacing.lg * 2 - 106, fontSize: fontSize.sm, lineHeight: 18, color: colors.text, fontWeight: '600' },
-  compactTabCount: { backgroundColor: colors.surfaceLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 },
-  compactTabCountText: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
-  tabScroll: { maxHeight: 60, marginTop: spacing.sm, marginBottom: spacing.xs, flexGrow: 0 },
-  tabContent: { paddingHorizontal: spacing.lg, paddingVertical: 4, paddingRight: spacing.xl, gap: spacing.sm, alignItems: 'center' },
-  tabButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  tabScroll: {
+    minHeight: 38,
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  tabContent: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: 0,
+    paddingHorizontal: spacing.lg,
+  },
+  tabButton: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, flexShrink: 0 },
   tabButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  tabLabel: { fontSize: fontSize.xs, lineHeight: 16, color: colors.textSecondary, fontWeight: '600' },
+  tabLabel: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '600' },
   tabLabelActive: { color: colors.black },
   tabCount: { backgroundColor: colors.surfaceLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 },
   tabCountActive: { backgroundColor: colors.black + '20' },
   tabCountText: { fontSize: 10, fontWeight: '700', color: colors.textMuted },
   tabCountTextActive: { color: colors.black },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.lg, marginTop: spacing.md, borderRadius: borderRadius.md, minHeight: 48, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 2,
+    gap: spacing.sm,
+    marginTop: 0,
+    marginBottom: 0,
+  },
   searchInput: { flex: 1, fontSize: fontSize.sm, color: colors.text },
-  filterScroll: { minHeight: 48, marginTop: spacing.sm, marginBottom: spacing.xs, flexGrow: 0 },
-  filterContent: { paddingHorizontal: spacing.lg, paddingVertical: 2, paddingRight: spacing.xl, gap: spacing.sm, alignItems: 'center' },
-  filterChip: { minHeight: 38, justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
+  filterScroll: { height: 36, marginTop: 2, marginBottom: 0 },
+  filterContent: { paddingHorizontal: spacing.lg, gap: 4, alignItems: 'center' },
+  filterChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
   filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterChipText: { fontSize: fontSize.sm, lineHeight: 18, color: colors.textSecondary, fontWeight: '600' },
+  filterChipText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '600' },
   filterChipTextActive: { color: colors.black },
-  resultCount: { fontSize: fontSize.xs, color: colors.textMuted, paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.sm },
+  resultCount: {
+    color: colors.textMuted,
+    fontSize: 15,
+    fontWeight: '500',
+    paddingVertical: 0,
+    marginBottom: 0,
+  },
   funderCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, marginHorizontal: spacing.lg, marginBottom: spacing.sm, borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
   funderRank: { width: 32, height: 32, borderRadius: borderRadius.sm, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center' },
   funderRankText: { fontSize: fontSize.xs, fontWeight: '700', color: colors.primary },
   funderInfo: { flex: 1 },
   funderName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
   funderFirm: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '500' },
-  funderMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 4 },
+  funderMeta: { flexDirection: 'row', gap: spacing.sm, marginTop: 4 },
   funderTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
   funderTagText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '500' },
   modalContainer: { flex: 1, backgroundColor: colors.background },
@@ -1338,7 +1408,7 @@ const styles = StyleSheet.create({
   guideSection: { marginTop: spacing.lg, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   guideSectionHeading: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, marginBottom: spacing.sm },
   guideSectionContent: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 22 },
-  caseCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  caseCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: 10, marginBottom: 6, borderWidth: 1, borderColor: colors.border },
   caseTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   caseIndustryBadge: { backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
   caseIndustryText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
@@ -1352,26 +1422,61 @@ const styles = StyleSheet.create({
   quoteBox: { backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, marginTop: spacing.lg, borderLeftWidth: 3, borderLeftColor: colors.primary },
   quoteText: { fontSize: fontSize.sm, color: colors.text, fontStyle: 'italic', lineHeight: 22 },
   quoteAuthor: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600', marginTop: spacing.sm },
-  confCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  confHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  confIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
-  confName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-  confFocus: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '500' },
-  confDesc: { fontSize: fontSize.sm, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.sm },
-  confFooter: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, rowGap: 6 },
+  confCard: { backgroundColor: colors.surface, borderRadius: borderRadius.md, paddingHorizontal: spacing.md, paddingVertical: 8, marginBottom: 5, borderWidth: 1, borderColor: colors.border },
+  confCardLive: { borderColor: '#00C853', shadowColor: '#00C853', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 2 },
+  confHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  confIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
+  confName: { fontSize: fontSize.sm, fontWeight: '700', color: colors.text, lineHeight: 18 },
+  confFocus: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '500', lineHeight: 14 },
+  confDesc: { fontSize: fontSize.xs, color: colors.textSecondary, lineHeight: 16, marginBottom: 4 },
+  confDetailsBlock: { gap: 4, marginBottom: 6, paddingTop: 0 },
+  confDetailRow: { minHeight: 16 },
+  confDetailLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 1 },
+  confDetailLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3, lineHeight: 12 },
+  confDetailValue: { fontSize: fontSize.xs, color: colors.textSecondary, lineHeight: 15 },
+  confDetailEmptyRow: { minHeight: 16 },
+  confFooter: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   confMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  confMetaText: { fontSize: fontSize.xs, color: colors.textSecondary },
-  confAttendeeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
-  confAttendeeText: { fontSize: 10, color: colors.primary, fontWeight: '600' },
-  confFilterSection: { minHeight: 42, marginTop: spacing.xs, flexGrow: 0 },
-  confFilterChips: { paddingHorizontal: spacing.lg, paddingVertical: 2, paddingRight: spacing.xl, gap: spacing.xs, alignItems: 'center' },
-  confChip: { minHeight: 34, justifyContent: 'center', paddingHorizontal: spacing.sm + 2, paddingVertical: 6, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight },
+  confMetaText: { fontSize: fontSize.xs, color: colors.textSecondary, lineHeight: 14 },
+  confAttendeeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 6, paddingVertical: 1, borderRadius: borderRadius.sm },
+  confAttendeeText: { fontSize: 10, color: colors.primary, fontWeight: '600', lineHeight: 12 },
+  confFilterSection: {
+    minHeight: 0,
+    marginTop: 2,
+    marginBottom: 0,
+  },
+  confFiltersStack: {
+    marginBottom: 4,
+  },
+  confResultsStack: {
+    flex: 1,
+    minHeight: 0,
+    marginTop: 0,
+  },
+  confSectionList: {
+    flex: 1,
+    minHeight: 0,
+  },
+  confFilterChips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 4,
+    paddingVertical: 0,
+    paddingHorizontal: spacing.md,
+  },
+  confChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.full, borderWidth: 1, borderColor: colors.borderLight, backgroundColor: colors.surfaceLight, flexShrink: 0 },
   confChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  confChipText: { fontSize: fontSize.xs, lineHeight: 16, color: colors.textSecondary, fontWeight: '500' },
+  confChipText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: '500' },
   confChipTextActive: { color: colors.black, fontWeight: '600' },
   confDateBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
   confDateText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
-  confSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm, paddingVertical: spacing.sm },
+  confSectionHeader: {
+    marginTop: 0,
+    marginBottom: 0,
+    paddingVertical: 0,
+  },
+  confSectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   confSectionTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, flex: 1 },
   confSectionCount: { backgroundColor: colors.primary + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.sm },
   confSectionCountText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '700' },

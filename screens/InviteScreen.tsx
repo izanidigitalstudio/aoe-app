@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import ViewShot from 'react-native-view-shot';
@@ -19,6 +18,26 @@ import QRCodeStyled from 'react-native-qrcode-styled';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 
 const REGISTER_URL = 'https://app.aoeafrica.org.za';
+
+const copyRegistrationLink = async () => {
+  if (Platform.OS === 'web') {
+    const nav = globalThis as typeof globalThis & {
+      navigator?: { clipboard?: { writeText?: (text: string) => Promise<void> } };
+    };
+
+    if (nav.navigator?.clipboard?.writeText) {
+      await nav.navigator.clipboard.writeText(REGISTER_URL);
+      Alert.alert('Link Copied', 'Registration link has been copied to your clipboard.');
+      return;
+    }
+  }
+
+  await Share.share({
+    title: 'Join AOE Africa',
+    message: REGISTER_URL,
+    url: REGISTER_URL,
+  });
+};
 
 type Props = {
   onClose: () => void;
@@ -40,8 +59,7 @@ export default function InviteScreen({ onClose }: Props) {
   };
 
   const handleCopyLink = async () => {
-    await Clipboard.setStringAsync(REGISTER_URL);
-    Alert.alert('Link Copied', 'Registration link has been copied to your clipboard.');
+    await copyRegistrationLink();
   };
 
   const captureQR = async (): Promise<string | null> => {
@@ -58,18 +76,20 @@ export default function InviteScreen({ onClose }: Props) {
 
   const handleSaveToPhotos = async () => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant photo library access to save the QR code.');
-        return;
-      }
       const uri = await captureQR();
       if (!uri) {
         Alert.alert('Error', 'Could not capture QR code. Please try again.');
         return;
       }
-      await MediaLibrary.saveToLibraryAsync(uri);
-      Alert.alert('Saved', 'QR code has been saved to your photo library.');
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: 'Save AOE Africa QR Code',
+        });
+      } else {
+        Alert.alert('Unavailable', 'Sharing is not available on this device.');
+      }
     } catch (e: any) {
       Alert.alert('Error', 'Failed to save QR code to photos.');
     }

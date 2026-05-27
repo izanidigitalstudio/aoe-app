@@ -19,7 +19,7 @@ ActivityIndicator,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation } from 'convex/react';
-import { api } from '../convex/_generated/api';
+import { api } from '../lib/convexApi';
 import { colors, spacing, fontSize, borderRadius } from '../lib/theme';
 import { useDemo } from '../lib/DemoContext';
 
@@ -613,7 +613,6 @@ onChangeText={setSearch}
 <ScrollView
 horizontal
 showsHorizontalScrollIndicator={false}
-style={styles.filterScroll}
 contentContainerStyle={styles.filterRow}
 >
 {INDUSTRIES.map((ind) => (
@@ -819,7 +818,7 @@ safeArea: { flex: 1 },
 header: {
 paddingHorizontal: spacing.lg,
 paddingTop: spacing.md,
-paddingBottom: spacing.sm,
+paddingBottom: spacing.xs,
 },
 headerTitle: {
 fontSize: fontSize.xxl,
@@ -837,36 +836,32 @@ marginTop: 2,
 tabRow: {
 flexDirection: 'row',
 paddingHorizontal: spacing.lg,
-paddingVertical: 2,
 gap: spacing.xs,
 marginTop: spacing.sm,
-marginBottom: spacing.md,
+marginBottom: spacing.sm,
 },
 tab: {
 flex: 1,
-minHeight: 42,
-paddingHorizontal: spacing.sm,
 paddingVertical: spacing.sm,
 borderRadius: borderRadius.md,
-justifyContent: 'center',
 alignItems: 'center',
 backgroundColor: colors.surface,
 borderWidth: 1,
 borderColor: colors.border,
 },
 tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-tabText: { fontSize: fontSize.sm, lineHeight: 18, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
+tabText: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textSecondary },
 tabTextActive: { color: colors.black },
 
 // Search
-searchRow: { paddingHorizontal: spacing.lg, marginBottom: spacing.md },
+searchRow: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
 searchBox: {
 flexDirection: 'row',
 alignItems: 'center',
 backgroundColor: colors.surface,
 borderRadius: borderRadius.md,
 paddingHorizontal: spacing.md,
-minHeight: 46,
+height: 44,
 borderWidth: 1,
 borderColor: colors.border,
 gap: spacing.sm,
@@ -878,26 +873,14 @@ fontSize: fontSize.sm,
 },
 
 // Filter
-filterScroll: {
-flexGrow: 0,
-minHeight: 54,
-overflow: 'visible',
-marginBottom: spacing.xs,
-},
 filterRow: {
 paddingHorizontal: spacing.lg,
-paddingTop: 4,
-paddingBottom: 10,
-paddingRight: spacing.xl,
+paddingBottom: spacing.md,
 gap: spacing.xs,
 flexDirection: 'row',
 alignItems: 'center',
 },
 filterChip: {
-minHeight: 38,
-justifyContent: 'center',
-alignSelf: 'center',
-flexShrink: 0,
 paddingHorizontal: spacing.md,
 paddingVertical: 8,
 borderRadius: borderRadius.full,
@@ -910,33 +893,32 @@ filterChipActive: {
 backgroundColor: colors.primary + '20',
 borderColor: colors.primary,
 },
-filterChipText: { fontSize: fontSize.sm, lineHeight: 18, color: colors.text },
+filterChipText: { fontSize: fontSize.sm, color: colors.text },
 filterChipTextActive: { color: colors.primary, fontWeight: '600' },
 
 // List
-list: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.xl },
+list: { paddingHorizontal: spacing.lg },
 
 // Member Card
 memberCard: {
 flexDirection: 'row',
-alignItems: 'flex-start',
+alignItems: 'center',
 backgroundColor: colors.surface,
 borderRadius: borderRadius.md,
 padding: spacing.md,
 marginBottom: spacing.sm,
 borderWidth: 1,
 borderColor: colors.border,
-gap: spacing.sm,
 },
 avatar: {
 width: 52,
 height: 52,
 borderRadius: 26,
 backgroundColor: colors.surfaceLight,
-marginTop: 2,
 },
 memberInfo: {
 flex: 1,
+marginLeft: spacing.md,
 },
 memberName: {
 fontSize: fontSize.md,
@@ -946,14 +928,13 @@ color: colors.text,
 memberRole: {
 fontSize: fontSize.sm,
 color: colors.textSecondary,
-marginTop: 2,
-lineHeight: 18,
+marginTop: 1,
 },
 metaRow: {
 flexDirection: 'row',
 alignItems: 'center',
 gap: 4,
-marginTop: spacing.xs,
+marginTop: 4,
 flexWrap: 'wrap',
 },
 metaChip: {
@@ -969,7 +950,7 @@ marginRight: 4,
 metaText: { fontSize: 10, color: colors.primary, fontWeight: '500' },
 
 // Card actions
-cardActions: { marginLeft: spacing.xs, paddingTop: 4 },
+cardActions: { marginLeft: spacing.sm },
 connectBtn: {
 width: 40,
 height: 40,
@@ -997,12 +978,12 @@ alignItems: 'center',
 },
 
 // Section
-sectionBlock: { marginBottom: spacing.lg + 2 },
+sectionBlock: { marginBottom: spacing.lg },
 sectionLabel: {
 fontSize: fontSize.sm,
 fontWeight: '700',
 color: colors.textSecondary,
-marginBottom: spacing.md,
+marginBottom: spacing.sm,
 textTransform: 'uppercase',
 letterSpacing: 1,
 },
@@ -1037,11 +1018,10 @@ padding: spacing.md,
 marginBottom: spacing.sm,
 borderWidth: 1,
 borderColor: colors.border,
-gap: spacing.sm,
 },
-convoInfo: { flex: 1 },
-convoName: { fontSize: fontSize.md, fontWeight: '600', color: colors.text, lineHeight: 20 },
-convoLastMsg: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
+convoInfo: { flex: 1, marginLeft: spacing.md },
+convoName: { fontSize: fontSize.md, fontWeight: '600', color: colors.text },
+convoLastMsg: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
 convoTime: { fontSize: fontSize.xs, color: colors.textMuted },
 
 // Empty state
@@ -1082,7 +1062,7 @@ detailContent: { paddingHorizontal: spacing.lg },
 profileHeader: {
 alignItems: 'center',
 paddingTop: spacing.lg,
-paddingBottom: spacing.lg,
+paddingBottom: spacing.md,
 },
 profileImage: {
 width: 100,
@@ -1129,7 +1109,6 @@ actionRow: {
 flexDirection: 'row',
 gap: spacing.sm,
 marginBottom: spacing.lg,
-alignItems: 'stretch',
 },
 actionBtn: {
 flex: 1,
@@ -1205,9 +1184,8 @@ fontWeight: '600',
 contactList: { gap: spacing.sm },
 contactRow: {
 flexDirection: 'row',
-alignItems: 'flex-start',
+alignItems: 'center',
 gap: spacing.sm,
-paddingVertical: 2,
 },
 contactIcon: {
 width: 32,
@@ -1242,7 +1220,7 @@ backgroundColor: colors.surfaceLight,
 chatName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
 chatRole: { fontSize: fontSize.xs, color: colors.textSecondary },
 chatBody: { flex: 1 },
-chatBodyContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+chatBodyContent: { padding: spacing.lg },
 chatEmpty: { alignItems: 'center', paddingVertical: 60 },
 chatEmptyText: {
 fontSize: fontSize.lg,
@@ -1288,8 +1266,7 @@ chatInputRow: {
 flexDirection: 'row',
 alignItems: 'flex-end',
 paddingHorizontal: spacing.lg,
-paddingTop: spacing.sm,
-paddingBottom: spacing.md,
+paddingVertical: spacing.sm,
 borderTopWidth: 1,
 borderTopColor: colors.border,
 gap: spacing.sm,

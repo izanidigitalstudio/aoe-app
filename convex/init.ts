@@ -30,7 +30,7 @@ export const seedData = mutation({
         city: "Gaborone",
         country: "Botswana",
         venue: "Hotel 430, Gaborone",
-        date: 1776528000000, // May 21, 2026 18:00 SAST
+        date: 1781971200000, // June 20, 2026 18:00 SAST
         capacity: 30,
         imageUrl:
           "https://images.unsplash.com/photo-1552664730-d307ca884978?w=500&h=300&fit=crop",
