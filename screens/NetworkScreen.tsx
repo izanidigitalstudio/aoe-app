@@ -17,6 +17,7 @@ Platform,
 ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../lib/convexApi';
@@ -70,6 +71,7 @@ const INDUSTRIES = [
 ];
 
 export default function NetworkScreen() {
+const navigation = useNavigation<any>();
 const { isDemo, exitDemo } = useDemo();
 const [tab, setTab] = useState<TabType>('discover');
 const [search, setSearch] = useState('');
@@ -563,6 +565,18 @@ return (
 <View style={styles.container}>
 <SafeAreaView edges={['top']} style={styles.safeArea}>
 <View style={styles.header}>
+<TouchableOpacity
+style={styles.backButton}
+onPress={() => {
+if (navigation.canGoBack()) navigation.goBack();
+else navigation.navigate('HomeTab');
+}}
+accessibilityRole="button"
+accessibilityLabel="Go back"
+>
+<Ionicons name="arrow-back" size={22} color={colors.primary} />
+<Text style={styles.backButtonText}>Back</Text>
+</TouchableOpacity>
 <Text style={styles.headerTitle}>Network</Text>
 <Text style={styles.headerSubtitle}>
 {members?.length || 0} Entrepreneurs
@@ -613,6 +627,7 @@ onChangeText={setSearch}
 <ScrollView
 horizontal
 showsHorizontalScrollIndicator={false}
+style={styles.filterScroll}
 contentContainerStyle={styles.filterRow}
 >
 {INDUSTRIES.map((ind) => (
@@ -820,6 +835,20 @@ paddingHorizontal: spacing.lg,
 paddingTop: spacing.md,
 paddingBottom: spacing.xs,
 },
+backButton: {
+flexDirection: 'row',
+alignItems: 'center',
+alignSelf: 'flex-start',
+gap: 4,
+minHeight: 32,
+paddingRight: spacing.sm,
+marginBottom: spacing.xs,
+},
+backButtonText: {
+fontSize: fontSize.sm,
+fontWeight: '700',
+color: colors.primary,
+},
 headerTitle: {
 fontSize: fontSize.xxl,
 fontWeight: '800',
@@ -839,12 +868,15 @@ paddingHorizontal: spacing.lg,
 gap: spacing.xs,
 marginTop: spacing.sm,
 marginBottom: spacing.sm,
+flexShrink: 0,
 },
 tab: {
 flex: 1,
+minHeight: 40,
 paddingVertical: spacing.sm,
 borderRadius: borderRadius.md,
 alignItems: 'center',
+justifyContent: 'center',
 backgroundColor: colors.surface,
 borderWidth: 1,
 borderColor: colors.border,
@@ -873,14 +905,22 @@ fontSize: fontSize.sm,
 },
 
 // Filter
+filterScroll: {
+flexGrow: 0,
+flexShrink: 0,
+height: 48,
+marginBottom: spacing.sm,
+},
 filterRow: {
 paddingHorizontal: spacing.lg,
-paddingBottom: spacing.md,
+paddingVertical: 4,
 gap: spacing.xs,
 flexDirection: 'row',
 alignItems: 'center',
 },
 filterChip: {
+minHeight: 36,
+justifyContent: 'center',
 paddingHorizontal: spacing.md,
 paddingVertical: 8,
 borderRadius: borderRadius.full,
@@ -897,7 +937,7 @@ filterChipText: { fontSize: fontSize.sm, color: colors.text },
 filterChipTextActive: { color: colors.primary, fontWeight: '600' },
 
 // List
-list: { paddingHorizontal: spacing.lg },
+list: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
 
 // Member Card
 memberCard: {

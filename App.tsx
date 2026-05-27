@@ -29,6 +29,7 @@ const TAB_ICONS: Record<string, { focused: string; unfocused: string }> = {
   CommunityTab: { focused: 'clipboard', unfocused: 'clipboard-outline' },
   AIHubTab: { focused: 'bulb', unfocused: 'bulb-outline' },
   EventsTab: { focused: 'calendar', unfocused: 'calendar-outline' },
+  NetworkMembers: { focused: 'people', unfocused: 'people-outline' },
   ProfileTab: { focused: 'person', unfocused: 'person-outline' },
 };
 
@@ -61,6 +62,15 @@ function MainTabs() {
       <Tab.Screen name="CommunityTab" component={CommunityScreen} options={{ title: 'Post' }} />
       <Tab.Screen name="AIHubTab" component={AIHubScreen} options={{ title: 'AI Hub' }} />
       <Tab.Screen name="EventsTab" component={EventsScreen} options={{ title: 'Events' }} />
+      <Tab.Screen
+        name="NetworkMembers"
+        component={NetworkScreen}
+        options={{
+          title: 'Network',
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
+        }}
+      />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
@@ -70,7 +80,6 @@ function MainApp() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MainTabs" component={MainTabs} />
-      <Stack.Screen name="NetworkMembers" component={NetworkScreen} />
     </Stack.Navigator>
   );
 }
