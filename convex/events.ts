@@ -2,6 +2,12 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+const getStartOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.getTime();
+};
+
 export const listEvents = query({
   args: {
     status: v.optional(v.string()),
@@ -58,11 +64,13 @@ export const listEvents = query({
       q = q.withIndex("by_status", (qb) => qb.eq("status", args.status));
     }
     const events = await q.collect();
-    // Sort by sortOrder if present, otherwise by date
+    // Future events first by date, then past events at the bottom newest-first.
     const sorted = events.sort((a, b) => {
-      const aOrder = a.sortOrder ?? a.date;
-      const bOrder = b.sortOrder ?? b.date;
-      return aOrder - bOrder;
+      const today = getStartOfToday();
+      const aPast = a.date < today;
+      const bPast = b.date < today;
+      if (aPast !== bPast) return aPast ? 1 : -1;
+      return aPast ? b.date - a.date : a.date - b.date;
     });
     return sorted.map((event) => (
       {

@@ -2,10 +2,15 @@ import { action, mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
 import { v } from "convex/values";
 
-const MAY_2026_CUTOFF = new Date(2026, 4, 18).getTime();
 const monthMap: Record<string, number> = {
   Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
   Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+};
+
+const getStartOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.getTime();
 };
 
 const parseConferenceStartTime = (dateStr: string): number => {
@@ -41,7 +46,13 @@ const sortConferencesAscending = (conferences: any[]) =>
   conferences
     .slice()
     .sort((a, b) => {
-      const diff = parseConferenceStartTime(a.date) - parseConferenceStartTime(b.date);
+      const today = getStartOfToday();
+      const aTime = parseConferenceStartTime(a.date);
+      const bTime = parseConferenceStartTime(b.date);
+      const aPast = aTime < today;
+      const bPast = bTime < today;
+      if (aPast !== bPast) return aPast ? 1 : -1;
+      const diff = aPast ? bTime - aTime : aTime - bTime;
       if (diff !== 0) return diff;
       return (a._creationTime || 0) - (b._creationTime || 0);
     });
@@ -291,7 +302,7 @@ export const archivePastConferences = mutation({
 
     for (const conference of conferences) {
       const parsedTime = parseConferenceStartTime(conference.date);
-      if (conference.isArchived || parsedTime === Number.MAX_SAFE_INTEGER || parsedTime >= MAY_2026_CUTOFF) {
+      if (conference.isArchived || parsedTime === Number.MAX_SAFE_INTEGER || parsedTime >= getStartOfToday()) {
         skipped++;
         continue;
       }

@@ -156,6 +156,17 @@ const UPCOMING_PROJECTS = [
   },
 ];
 
+const getStartOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.getTime();
+};
+
+const sortUpcomingEvents = (eventList: any[] = []) =>
+  eventList
+    .filter((event) => event.date >= getStartOfToday())
+    .sort((a, b) => a.date - b.date);
+
 export default function HomeScreen({ navigation }: any) {
   const { isDemo } = useDemo();
   const user = useQuery(api.users.getCurrentUser);
@@ -172,7 +183,7 @@ export default function HomeScreen({ navigation }: any) {
     seedData().catch(() => {});
   }, []);
 
-  const upcomingEvents = events?.filter((e) => e.status === 'upcoming').slice(0, 3);
+  const upcomingEvents = sortUpcomingEvents(events ?? []).slice(0, 3);
   const latestProjects = projects?.slice(0, 3);
   const greeting = getGreeting();
   const firstName = !isDemo && user?.name ? user.name.split(' ')[0] : 'Member';
@@ -303,7 +314,7 @@ export default function HomeScreen({ navigation }: any) {
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Dinner Tour Events</Text>
-                <TouchableOpacity onPress={() => navigation.navigate('CommunityTab')}>
+                <TouchableOpacity onPress={() => navigation.navigate('EventsTab')}>
                   <Text style={styles.seeAll}>See All</Text>
                 </TouchableOpacity>
               </View>
@@ -312,7 +323,7 @@ export default function HomeScreen({ navigation }: any) {
                   <TouchableOpacity
                     key={event._id}
                     style={styles.eventCard}
-                    onPress={() => navigation.navigate('CommunityTab')}
+                    onPress={() => navigation.navigate('EventsTab')}
                   >
                     <View style={styles.eventImagePlaceholder}>
                       <Ionicons name="restaurant" size={28} color={colors.primary} />

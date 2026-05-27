@@ -25,11 +25,38 @@ const EVENT_CATEGORIES = [
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const getStartOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.getTime();
+};
+
+const isPastEvent = (timestamp: number) => timestamp < getStartOfToday();
+
+const sortEventsByDatePriority = (eventList: any[] = []) =>
+  eventList.slice().sort((a, b) => {
+    const aPast = isPastEvent(a.date);
+    const bPast = isPastEvent(b.date);
+    if (aPast !== bPast) return aPast ? 1 : -1;
+    return aPast ? b.date - a.date : a.date - b.date;
+  });
+
+const getEventStatusLabel = (event: any) => {
+  if (isPastEvent(event.date)) return 'Past';
+  return event.status === 'upcoming' ? 'Upcoming' : event.status;
+};
+
+const getEventStatusColor = (event: any) => {
+  if (isPastEvent(event.date)) return colors.textMuted;
+  return event.status === 'upcoming' ? colors.success : colors.primary;
+};
+
 export default function EventsScreen() {
   const { isDemo, exitDemo } = useDemo();
   const [selectedCategory, setSelectedCategory] = useState('dinner_tour');
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const events = useQuery(api.events.listEvents, { category: selectedCategory });
+  const sortedEvents = sortEventsByDatePriority(events ?? []);
   const rsvpEvent = useMutation(api.events.rsvpEvent);
 
   const handleRsvp = async (eventId: any) => {
@@ -110,7 +137,7 @@ export default function EventsScreen() {
         </ScrollView>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.list}>
-          {events?.map((event) => (
+          {sortedEvents.map((event) => (
             <TouchableOpacity
               key={event._id}
               style={styles.eventCard}
@@ -129,10 +156,12 @@ export default function EventsScreen() {
                   <View
                     style={[
                       styles.statusDot,
-                      { backgroundColor: event.status === 'upcoming' ? colors.success : colors.primary },
+                      { backgroundColor: getEventStatusColor(event) },
                     ]}
                   />
-                  <Text style={styles.statusText}>{event.status}</Text>
+                  <Text style={[styles.statusText, { color: getEventStatusColor(event) }]}>
+                    {getEventStatusLabel(event)}
+                  </Text>
                 </View>
               </View>
 
@@ -172,7 +201,7 @@ export default function EventsScreen() {
             </TouchableOpacity>
           ))}
 
-          {(!events || events.length === 0) && (
+          {sortedEvents.length === 0 && (
             <View style={styles.emptyState}>
               <Ionicons name="calendar-outline" size={48} color={colors.textMuted} />
               <Text style={styles.emptyText}>No events available</Text>
@@ -202,10 +231,10 @@ export default function EventsScreen() {
                   <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
                 <View style={modalStyles.statusRow}>
-                  <View style={[styles.statusBadge, { backgroundColor: colors.success + '20' }]}>
-                    <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
-                    <Text style={[styles.statusText, { color: colors.success }]}>
-                      {selectedEvent.status}
+                  <View style={[styles.statusBadge, { backgroundColor: getEventStatusColor(selectedEvent) + '20' }]}>
+                    <View style={[styles.statusDot, { backgroundColor: getEventStatusColor(selectedEvent) }]} />
+                    <Text style={[styles.statusText, { color: getEventStatusColor(selectedEvent) }]}>
+                      {getEventStatusLabel(selectedEvent)}
                     </Text>
                   </View>
                   {selectedEvent.ticketPrice && (

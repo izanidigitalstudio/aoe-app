@@ -49,7 +49,11 @@ type ConferenceItem = {
   };
 };
 
-const MAY_2026_CUTOFF = new Date(2026, 4, 1).getTime();
+const getStartOfToday = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today.getTime();
+};
 
 function parseConferenceStartTime(dateStr: string): number {
   const monthMap: Record<string, number> = {
@@ -82,16 +86,26 @@ function parseConferenceStartTime(dateStr: string): number {
   return Number.MAX_SAFE_INTEGER;
 }
 
-function sortConferencesAscending(conferences: ConferenceItem[]): ConferenceItem[] {
+function sortConferencesByDatePriority(conferences: ConferenceItem[]): ConferenceItem[] {
   return conferences.slice().sort((a, b) => {
-    const diff = parseConferenceStartTime(a.date) - parseConferenceStartTime(b.date);
+    const aPast = isPastConference(a);
+    const bPast = isPastConference(b);
+    if (aPast !== bPast) return aPast ? 1 : -1;
+    const diff = aPast
+      ? parseConferenceStartTime(b.date) - parseConferenceStartTime(a.date)
+      : parseConferenceStartTime(a.date) - parseConferenceStartTime(b.date);
     if (diff !== 0) return diff;
     return String(a._id || a.name).localeCompare(String(b._id || b.name));
   });
 }
 
 function isUpcomingConference(conference: ConferenceItem): boolean {
-  return parseConferenceStartTime(conference.date) >= MAY_2026_CUTOFF;
+  return !isPastConference(conference);
+}
+
+function isPastConference(conference: ConferenceItem): boolean {
+  if (conference.passed) return true;
+  return parseConferenceStartTime(conference.date) < getStartOfToday();
 }
 
 // ==================== FUNDERS VIEW ====================
@@ -337,7 +351,7 @@ function getMonthLabel(dateStr: string): string {
 function groupByMonth(conferences: ConferenceItem[]): { title: string; data: ConferenceItem[] }[] {
   const groups: Record<string, ConferenceItem[]> = {};
   conferences.forEach(c => {
-    const label = c.isLive ? '🔴 Happening Now' : c.passed ? 'Returning in 2027' : getMonthLabel(c.date);
+    const label = c.isLive ? '🔴 Happening Now' : isPastConference(c) ? 'Past Conferences' : getMonthLabel(c.date);
     if (!groups[label]) groups[label] = [];
     groups[label].push(c);
   });
@@ -526,7 +540,7 @@ async function addConferenceToNativeCalendar(conference: ConferenceItem): Promis
 }
 
 async function syncAllConferencesToCalendar(conferences: ConferenceItem[]): Promise<{ added: number; skipped: number }> {
-  const upcoming = conferences.filter(c => !c.passed && parseConferenceDates(c) !== null);
+  const upcoming = conferences.filter(c => !isPastConference(c) && parseConferenceDates(c) !== null);
   const calId = await getDefaultCalendarId();
   if (!calId) return { added: 0, skipped: 0 };
 
@@ -672,12 +686,12 @@ function ConferenceDetailModal({ conference, onClose }: { conference: Conference
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-          {conference.passed && (
+          {isPastConference(conference) && (
             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FF6B6B18', paddingHorizontal: 12, paddingVertical: 8, borderRadius: borderRadius.md, marginBottom: spacing.md, gap: 8 }}>
               <Ionicons name="checkmark-done-circle" size={16} color="#FF6B6B" />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: fontSize.sm, color: '#FF6B6B', fontWeight: '700' }}>This conference has passed</Text>
-                <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 }}>Originally: {conference.originalDate} — Returning in 2027</Text>
+                <Text style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 }}>Originally: {conference.originalDate ?? conference.date}</Text>
               </View>
             </View>
           )}
@@ -697,9 +711,9 @@ function ConferenceDetailModal({ conference, onClose }: { conference: Conference
           </View>
           <Text style={[styles.confDesc, { marginBottom: spacing.md }]}>{conference.description}</Text>
           <View style={[styles.confFooter, { marginBottom: spacing.lg }]}>
-            <View style={[styles.confDateBadge, conference.isLive && { backgroundColor: '#00C85320' }]}>
-              <Ionicons name={conference.isLive ? 'radio' : 'calendar'} size={12} color={conference.isLive ? '#00C853' : colors.primary} />
-              <Text style={[styles.confDateText, conference.isLive && { color: '#00C853', fontWeight: '700' }]}>{conference.date}</Text>
+            <View style={[styles.confDateBadge, conference.isLive && { backgroundColor: '#00C85320' }, isPastConference(conference) && styles.confDateBadgePast]}>
+              <Ionicons name={conference.isLive ? 'radio' : isPastConference(conference) ? 'checkmark-done' : 'calendar'} size={12} color={conference.isLive ? '#00C853' : isPastConference(conference) ? colors.textMuted : colors.primary} />
+              <Text style={[styles.confDateText, conference.isLive && { color: '#00C853', fontWeight: '700' }, isPastConference(conference) && styles.confDateTextPast]}>{conference.date}</Text>
             </View>
             <View style={styles.confMetaItem}><Ionicons name="location" size={12} color={colors.textSecondary} /><Text style={styles.confMetaText}>{conference.location}</Text></View>
           </View>
@@ -801,7 +815,7 @@ function ConferenceDetailModal({ conference, onClose }: { conference: Conference
           })()}
 
           {/* Add to Device Calendar (syncs with Google Calendar) */}
-          {!conference.passed && parseConferenceDates(conference) && (
+          {!isPastConference(conference) && parseConferenceDates(conference) && (
             <TouchableOpacity
               style={[cdStyles.websiteBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.success, marginBottom: spacing.md }]}
               onPress={async () => {
@@ -834,7 +848,7 @@ function ConferenceDetailModal({ conference, onClose }: { conference: Conference
           )}
 
           {/* Request to Participate */}
-          {!existingRequest && !conference.passed && !showRequestForm && (
+          {!existingRequest && !isPastConference(conference) && !showRequestForm && (
             <TouchableOpacity style={cdStyles.requestBtn} onPress={() => setShowRequestForm(true)}>
               <Ionicons name="hand-left" size={18} color={colors.white} />
               <Text style={cdStyles.requestBtnText}>Request to Participate</Text>
@@ -901,7 +915,7 @@ function ConferencesView({ conferences }: { conferences: ConferenceItem[] }) {
   const [syncing, setSyncing] = useState(false);
   const focuses = ['All', 'AI', 'Technology', 'Investment', 'Entrepreneurship', 'Infrastructure'];
 
-  const allConferences = sortConferencesAscending(conferences).filter(isUpcomingConference);
+  const allConferences = sortConferencesByDatePriority(conferences);
 
   const monthLabels = (() => {
     const seen = new Set<string>();
@@ -960,9 +974,9 @@ function ConferencesView({ conferences }: { conferences: ConferenceItem[] }) {
         </View>
 
         <View style={styles.confFooter}>
-          <View style={[styles.confDateBadge, conference.isLive && { backgroundColor: '#00C85320' }]}>
-            <Ionicons name={conference.isLive ? 'radio' : 'calendar'} size={12} color={conference.isLive ? '#00C853' : colors.primary} />
-            <Text style={[styles.confDateText, conference.isLive && { color: '#00C853', fontWeight: '700' }]}>{conference.date}</Text>
+          <View style={[styles.confDateBadge, conference.isLive && { backgroundColor: '#00C85320' }, isPastConference(conference) && styles.confDateBadgePast]}>
+            <Ionicons name={conference.isLive ? 'radio' : isPastConference(conference) ? 'checkmark-done' : 'calendar'} size={12} color={conference.isLive ? '#00C853' : isPastConference(conference) ? colors.textMuted : colors.primary} />
+            <Text style={[styles.confDateText, conference.isLive && { color: '#00C853', fontWeight: '700' }, isPastConference(conference) && styles.confDateTextPast]}>{conference.date}</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -1236,7 +1250,7 @@ export default function AIHubScreen() {
     ((route.params as any)?.tab as HubTab) || 'conferences'
   );
   const convexConferences = (useQuery(api.conferences.list, {}) ?? []) as ConferenceItem[];
-  const conferenceCount = sortConferencesAscending(convexConferences).filter(isUpcomingConference).length;
+  const conferenceCount = sortConferencesByDatePriority(convexConferences).filter(isUpcomingConference).length;
   const tabConfig = getTabConfig(conferenceCount);
 
   useEffect(() => {
@@ -1495,6 +1509,8 @@ const styles = StyleSheet.create({
   confChipTextActive: { color: colors.black, fontWeight: '600' },
   confDateBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', paddingHorizontal: 8, paddingVertical: 3, borderRadius: borderRadius.sm },
   confDateText: { fontSize: fontSize.xs, color: colors.primary, fontWeight: '600' },
+  confDateBadgePast: { backgroundColor: colors.surfaceLight },
+  confDateTextPast: { color: colors.textMuted },
   confSectionHeader: {
     marginTop: 0,
     marginBottom: 0,
