@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "a0-project",
-    "slug": "snack-6a9d1d0c-a59a-4224-b707-7f740ca143c0",
+    "name": "AOE Connect",
+    "slug": "aoe-connect",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -24,8 +24,14 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "name": "AOE Connect | Art of Entrepreneurship Africa",
+      "shortName": "AOE Connect",
+      "lang": "en-ZA",
+      "themeColor": "#0D0D0D",
+      "backgroundColor": "#0D0D0D",
+      "description": "AOE Connect is the Art of Entrepreneurship Africa platform for AI entrepreneurs, events, conferences, funders, tools, projects, and member networking across Africa.",
       "favicon": "./assets/favicon.png"
     },
-    "description": "Quickly generate React Native components with AI"
+    "description": "AOE Connect is the Art of Entrepreneurship Africa platform for AI entrepreneurs, events, conferences, funders, tools, projects, and member networking across Africa."
   }
 }

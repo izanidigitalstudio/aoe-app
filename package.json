@@ -1,12 +1,12 @@
 {
-  "name": "a0-project",
+  "name": "aoe-connect",
   "version": "1.0.0",
   "license": "0BSD",
   "private": true,
   "main": "index.ts",
   "scripts": {
     "start": "npx expo start",
-    "build": "npx expo export --platform web",
+    "build": "npx expo export --platform web && node scripts/inject-seo-meta.mjs",
     "android": "npx expo run:android",
     "ios": "npx expo run:ios",
     "web": "npx expo start --web"
