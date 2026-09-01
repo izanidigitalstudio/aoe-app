@@ -267,7 +267,7 @@ export default function HomeScreen({ navigation }: any) {
           <TouchableOpacity
             style={styles.bookBanner}
             activeOpacity={0.85}
-            onPress={() => Linking.openURL('https://www.aoebook.com')}
+            onPress={() => Linking.openURL('https://artofentrepreneurship.co.za/')}
           >
             <View style={styles.bookBannerContent}>
               <Image
